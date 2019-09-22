@@ -11,42 +11,42 @@ import           GHC.Generics    (Generic)
 import           Pinch
 
 data StringType = StringType
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable StringType where
   type Tag StringType = TStruct
   pinch _ = struct []
   unpinch _ = pure StringType
 
 data UUIDType = UUIDType
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable UUIDType where
   type Tag UUIDType = TStruct
   pinch _ = struct []
   unpinch _ = pure UUIDType
 
 data MapType = MapType
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable MapType where
   type Tag MapType = TStruct
   pinch _ = struct []
   unpinch _ = pure MapType
 
 data ListType = ListType
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable ListType where
   type Tag ListType = TStruct
   pinch _ = struct []
   unpinch _ = pure ListType
 
 data EnumType = EnumType
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable EnumType where
   type Tag EnumType = TStruct
   pinch _ = struct []
   unpinch _ = pure EnumType
 
 data DateType = DateType
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable DateType where
   type Tag DateType = TStruct
   pinch _ = struct []
@@ -55,19 +55,19 @@ instance Pinchable DateType where
 data DecimalType = DecimalType
   { _DecimalType_scale     :: Field 1 Int32
   , _DecimalType_precision :: Field 2 Int32
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable DecimalType
 
 data TimestampType = TimestampType
   { _TimestampType_isAdjustedToUTC :: Field 1 Bool
   , _TimestampType_unit            :: Field 2 TimeUnit
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable TimestampType
 
 data TimeType = TimeType
   { _TimeType_isAdjustedToUTC :: Field 1 Bool
   , _TimeType_unit            :: Field 2 TimeUnit
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable TimeType
 
 -- qs -> struct
@@ -78,21 +78,21 @@ instance Pinchable TimeType
 -- qt -> enum field
 
 data MilliSeconds = MilliSeconds
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable MilliSeconds where
   type Tag MilliSeconds = TStruct
   pinch _ = struct []
   unpinch _ = pure MilliSeconds
 
 data MicroSeconds = MicroSeconds
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable MicroSeconds where
   type Tag MicroSeconds = TStruct
   pinch _ = struct []
   unpinch _ = pure MicroSeconds
 
 data NanoSeconds = NanoSeconds
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable NanoSeconds where
   type Tag NanoSeconds = TStruct
   pinch _ = struct []
@@ -102,31 +102,31 @@ data TimeUnit
   = TimeUnitMILLIS (Field 1 MilliSeconds)
   | TimeUnitMICROS (Field 2 MicroSeconds)
   | TimeUnitNANOS (Field 3 NanoSeconds)
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable TimeUnit
 
 data IntType = IntType
   { _IntType_bitWidth :: Field 1 Int8
   , _IntType_isSigned :: Field 2 Bool
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable IntType
 
 data NullType = NullType
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable NullType where
   type Tag NullType = TStruct
   pinch _ = struct []
   unpinch _ = pure NullType
 
 data JsonType = JsonType
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable JsonType where
   type Tag JsonType = TStruct
   pinch _ = struct []
   unpinch _ = pure JsonType
 
 data BsonType = BsonType
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable BsonType where
   type Tag BsonType = TStruct
   pinch _ = struct []
@@ -146,7 +146,7 @@ data LogicalType
   | LogicalTypeJSON (Field 12 JsonType)
   | LogicalTypeBSON (Field 13 BsonType)
   | LogicalTypeUUID (Field 14 UUIDType)
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable LogicalType
 
 data ConvertedType
@@ -171,7 +171,7 @@ data ConvertedType
   | JSON (Enumeration 19)
   | BSON (Enumeration 20)
   | INTERVAL (Enumeration 21)
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable ConvertedType
 
 data Type
@@ -183,14 +183,14 @@ data Type
   | DOUBLE (Enumeration 5)
   | BYTE_ARRAY (Enumeration 6)
   | FIXED_LEN_BYTE_ARRAY (Enumeration 7)
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable Type
 
 data FieldRepetitionType
   = REQUIRED (Enumeration 0)
   | OPTIONAL (Enumeration 1)
   | REPEATED (Enumeration 2)
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable FieldRepetitionType
 
 data SchemaElement = SchemaElement
@@ -205,7 +205,7 @@ data SchemaElement = SchemaElement
   , _field_id        :: Field 9 (Maybe Int32)
   , _logicalType     :: Field 10 (Maybe LogicalType)
   }
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable SchemaElement
 
 data Encoding
@@ -217,7 +217,7 @@ data Encoding
   | DELTA_LENGTH_BYTE_ARRAY (Enumeration 6)
   | DELTA_BYTE_ARRAY (Enumeration 7)
   | RLE_DICTIONARY (Enumeration 8)
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable Encoding
 
 data CompressionCodec
@@ -228,7 +228,7 @@ data CompressionCodec
   | BROTLI (Enumeration 4)
   | LZ4 (Enumeration 5)
   | ZSTD (Enumeration 6)
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable CompressionCodec
 
 data Statistics = Statistics
@@ -238,14 +238,14 @@ data Statistics = Statistics
    , _Statistics_distinct_count :: Field 4 (Maybe Int64)
    , _Statistics_max_value      :: Field 5 (Maybe ByteString)
    , _Statistics_min_value      :: Field 6 (Maybe ByteString)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable Statistics
 
 data PageEncodingStats = PageEncodingStats
   { _PageEncodingStats_page_type :: Field 1 PageType
   , _PageEncodingStats_encoding  :: Field 2 Encoding
   , _PageEncodingStats_count     :: Field 3 Int32
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable PageEncodingStats
 
 data PageType
@@ -253,38 +253,38 @@ data PageType
   | INDEX_PAGE (Enumeration 1)
   | DICTIONARY_PAGE (Enumeration 2)
   | DATA_PAGE_V2 (Enumeration 3)
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable PageType
 
 data SortingColumn = SortingColumn
   { _SortingColumn_column_idx  :: Field 1 Int32
   , _SortingColumn_descending  :: Field 2 Bool
   , _SortingColumn_nulls_first :: Field 3 Bool
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable SortingColumn
 
 data AesGcmV1 = AesGcmV1
   { _AesGcmV1_aad_prefix        :: Field 1 (Maybe ByteString)
   , _AesGcmV1_aad_file_unique   :: Field 2 (Maybe ByteString)
   , _AesGcmV1_supply_aad_prefix :: Field 3 (Maybe Bool)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable AesGcmV1
 
 data AesGcmCtrV1 = AesGcmCtrV1
   { _AesGcmCtrV1_aad_prefix        :: Field 1 (Maybe ByteString)
   , _AesGcmCtrV1_aad_file_unique   :: Field 2 (Maybe ByteString)
   , _AesGcmCtrV1_supply_aad_prefix :: Field 3 (Maybe Bool)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable AesGcmCtrV1
 
 data EncryptionAlgorithm
   = EncryptionAlgorithm_AES_GCM_V1 (Field 1 AesGcmV1)
   | EncryptionAlgorithm_AES_GCM_CTR_V1 (Field 2 AesGcmCtrV1)
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable EncryptionAlgorithm
 
 data TypeDefinedOrder = TypeDefinedOrder
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable TypeDefinedOrder where
   type Tag TypeDefinedOrder = TStruct
   pinch _ = struct []
@@ -292,11 +292,11 @@ instance Pinchable TypeDefinedOrder where
 
 data ColumnOrder
   = ColumnOrder_TYPE_ORDER (Field 1 TypeDefinedOrder)
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable ColumnOrder
 
 data EncryptionWithFooterKey = EncryptionWithFooterKey
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable EncryptionWithFooterKey where
   type Tag EncryptionWithFooterKey = TStruct
   pinch _ = struct []
@@ -305,19 +305,19 @@ instance Pinchable EncryptionWithFooterKey where
 data EncryptionWithColumnKey = EncryptionWithColumnKey
   { _EncryptionWithColumnKey_path_in_schema :: Field 1 [Text]
   , _EncryptionWithColumnKey_key_metadata   :: Field 2 (Maybe ByteString)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable EncryptionWithColumnKey
 
 data ColumnCryptoMetaData
   = ColumnCryptoMetaData_ENCRYPTION_WITH_FOOTER_KEY (Field 1 EncryptionWithFooterKey)
   | ColumnCryptoMetaData_ENCRYPTION_WITH_COLUMN_KEY (Field 2 EncryptionWithColumnKey)
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable ColumnCryptoMetaData
 
 data KeyValue = KeyValue
   { _KeyValue_key   :: Field 1 Text
   , _KeyValue_value :: Field 2 (Maybe Text)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable KeyValue
 
 data ColumnMetaData = ColumnMetaData
@@ -335,7 +335,7 @@ data ColumnMetaData = ColumnMetaData
   , _ColumnMetaData_statistics :: Field 12 (Maybe Statistics)
   , _ColumnMetaData_encoding_stats :: Field 13 (Maybe [PageEncodingStats])
   , _ColumnMetaData_bloom_filter_offset :: Field 14 (Maybe Int64)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable ColumnMetaData
 
 data ColumnChunk = ColumnChunk
@@ -348,7 +348,7 @@ data ColumnChunk = ColumnChunk
   , _ColumnChunk_column_index_length :: Field 7 (Maybe Int32)
   , _ColumnChunk_crypto_metadata :: Field 8 (Maybe ColumnCryptoMetaData)
   , _ColumnChunk_encrypted_column_metadata :: Field 9 (Maybe ByteString)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable ColumnChunk
 
 data RowGroup = RowGroup
@@ -359,19 +359,66 @@ data RowGroup = RowGroup
   , _RowGroup_file_offset           :: Field 5 (Maybe Int64)
   , _RowGroup_total_compressed_size :: Field 6 (Maybe Int64)
   , _RowGroup_ordinal               :: Field 7 (Maybe Int16)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable RowGroup
 
 data FileMetadata = FileMetadata
-    { version                     :: Field 1 Int32
-    , schema                      :: Field 2 [SchemaElement]
-    , num_rows                    :: Field 3 Int64
-    , row_groups                  :: Field 4 [RowGroup]
-    , key_value_metadata          :: Field 5 (Maybe [KeyValue])
-    , created_by                  :: Field 6 (Maybe Text)
-    , column_orders               :: Field 7 (Maybe [ColumnOrder])
-    , encryption_algorithm        :: Field 8 (Maybe EncryptionAlgorithm)
-    , footer_signing_key_metadata :: Field 9 (Maybe ByteString)
-    } deriving (Eq, Generic)
+    { _FileMetadata_version                     :: Field 1 Int32
+    , _FileMetadata_schema                      :: Field 2 [SchemaElement]
+    , _FileMetadata_num_rows                    :: Field 3 Int64
+    , _FileMetadata_row_groups                  :: Field 4 [RowGroup]
+    , _FileMetadata_key_value_metadata          :: Field 5 (Maybe [KeyValue])
+    , _FileMetadata_created_by                  :: Field 6 (Maybe Text)
+    , _FileMetadata_column_orders               :: Field 7 (Maybe [ColumnOrder])
+    , _FileMetadata_encryption_algorithm        :: Field 8 (Maybe EncryptionAlgorithm)
+    , _FileMetadata_footer_signing_key_metadata :: Field 9 (Maybe ByteString)
+    } deriving (Show, Eq, Generic)
 
 instance Pinchable FileMetadata
+
+data PageHeader = PageHeader
+  { _PageHeader_type                   :: Field 1 PageType
+  , _PageHeader_uncompressed_page_size :: Field 2 Int32
+  , _PageHeader_compressed_page_size   :: Field 3 Int32
+  , _PageHeader_crc                    :: Field 4 (Maybe Int32)
+  , _PageHeader_data_page_header       :: Field 5 (Maybe DataPageHeader)
+  , _PageHeader_index_page_header      :: Field 6 (Maybe IndexPageHeader)
+  , _PageHeader_dictionary_page_header :: Field 7 (Maybe DictionaryPageHeader)
+  , _PageHeader_data_page_header_v2    :: Field 8 (Maybe DataPageHeaderV2)
+  } deriving (Eq, Generic)
+instance Pinchable PageHeader
+
+data IndexPageHeader = IndexPageHeader
+  deriving (Eq, Generic)
+instance Pinchable IndexPageHeader where
+  type Tag IndexPageHeader = TStruct
+  pinch _ = struct []
+  unpinch _ = pure IndexPageHeader
+
+data DataPageHeader = DataPageHeader
+  { _DataPageHeader_num_values                :: Field 1 Int32
+  , _DataPageHeader_encoding                  :: Field 2 Encoding
+  , _DataPageHeader_definition_level_encoding :: Field 3 Encoding
+  , _DataPageHeader_repetition_level_encoding :: Field 4 Encoding
+  , _DataPageHeader_statistics                :: Field 5 (Maybe Statistics)
+  } deriving (Eq, Generic)
+instance Pinchable DataPageHeader
+
+data DictionaryPageHeader = DictionaryPageHeader
+  { _DictionaryPageHeader_num_values :: Field 1 Int32
+  , _DictionaryPageHeader_encoding   :: Field 2 Encoding
+  , _DictionaryPageHeader_is_sorted  :: Field 3 (Maybe Bool)
+  } deriving (Eq, Generic)
+instance Pinchable DictionaryPageHeader
+
+data DataPageHeaderV2 = DataPageHeaderV2
+  { _DataPageHeaderV2_num_values :: Field 1 Int32
+  , _DataPageHeaderV2_num_nulls :: Field 2 Int32
+  , _DataPageHeaderV2_num_rows :: Field 3 Int32
+  , _DataPageHeaderV2_encoding :: Field 4 Encoding
+  , _DataPageHeaderV2_definition_levels_byte_length :: Field 5 Int32
+  , _DataPageHeaderV2_repetition_levels_byte_length :: Field 6 Int32
+  , _DataPageHeaderV2_is_compressed :: Field 7 (Maybe Bool)
+  , _DataPageHeaderV2_statistics :: Field 8 (Maybe Statistics)
+  } deriving (Eq, Generic)
+instance Pinchable DataPageHeaderV2
