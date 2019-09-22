@@ -385,11 +385,11 @@ data PageHeader = PageHeader
   , _PageHeader_index_page_header      :: Field 6 (Maybe IndexPageHeader)
   , _PageHeader_dictionary_page_header :: Field 7 (Maybe DictionaryPageHeader)
   , _PageHeader_data_page_header_v2    :: Field 8 (Maybe DataPageHeaderV2)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable PageHeader
 
 data IndexPageHeader = IndexPageHeader
-  deriving (Eq, Generic)
+  deriving (Show, Eq, Generic)
 instance Pinchable IndexPageHeader where
   type Tag IndexPageHeader = TStruct
   pinch _ = struct []
@@ -401,14 +401,14 @@ data DataPageHeader = DataPageHeader
   , _DataPageHeader_definition_level_encoding :: Field 3 Encoding
   , _DataPageHeader_repetition_level_encoding :: Field 4 Encoding
   , _DataPageHeader_statistics                :: Field 5 (Maybe Statistics)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable DataPageHeader
 
 data DictionaryPageHeader = DictionaryPageHeader
   { _DictionaryPageHeader_num_values :: Field 1 Int32
   , _DictionaryPageHeader_encoding   :: Field 2 Encoding
   , _DictionaryPageHeader_is_sorted  :: Field 3 (Maybe Bool)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable DictionaryPageHeader
 
 data DataPageHeaderV2 = DataPageHeaderV2
@@ -420,5 +420,5 @@ data DataPageHeaderV2 = DataPageHeaderV2
   , _DataPageHeaderV2_repetition_levels_byte_length :: Field 6 Int32
   , _DataPageHeaderV2_is_compressed :: Field 7 (Maybe Bool)
   , _DataPageHeaderV2_statistics :: Field 8 (Maybe Statistics)
-  } deriving (Eq, Generic)
+  } deriving (Show, Eq, Generic)
 instance Pinchable DataPageHeaderV2

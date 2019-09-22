@@ -35,3 +35,4 @@ executables:
     - text
     - bytestring
     - binary
+    - pretty-simple
