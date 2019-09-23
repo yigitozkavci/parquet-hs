@@ -1,27 +1,27 @@
 {-# LANGUAGE BangPatterns     #-}
 {-# LANGUAGE LambdaCase       #-}
-{-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE RankNTypes       #-}
 {-# LANGUAGE TypeApplications #-}
 
 module Parquet.Reader where
 
-import qualified Data.Binary.Get       as BG
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy  as BL
+import qualified Data.Binary.Get            as BG
+import qualified Data.ByteString.Char8      as BS
+import qualified Data.ByteString.Lazy       as LBS
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import           Data.Foldable
-import qualified Parquet.ThriftTypes   as TT
+import           Data.Functor               (($>))
+import qualified Parquet.ThriftTypes        as TT
 import qualified Pinch
 import           System.IO
 import           Text.Pretty.Simple
+import           Text.Printf
 
 goRead :: Handle -> IO ()
 goRead h = do
   metadata <- readMetadata h
-  pPrint metadata
   let Pinch.Field row_groups = TT._FileMetadata_row_groups metadata
   traverse_ (readRowGroup h) row_groups
-
 
 readRowGroup :: Handle -> TT.RowGroup -> IO ()
 readRowGroup h row_group = do
@@ -36,29 +36,49 @@ readColumnChunk h cc = do
     Nothing ->
       fail "Wow no metadata"
     Just metadata -> do
+      pPrint metadata
       hSeek h AbsoluteSeek (fromIntegral offset)
       let Pinch.Field size = TT._ColumnMetaData_total_compressed_size metadata
-      print =<< decodeSized @TT.PageHeader h size
-      pure ()
+      page_header <- failOnError $ decodeSized @TT.PageHeader h size
+      pPrint page_header
+      let Pinch.Field page_size = TT._PageHeader_uncompressed_page_size page_header
+      -- !len <- runHandleGet h BG.getWord32le
+      -- printf "%d\n" len
+      !w <- runHandleGet h BG.getWord8
+      printf "%b\n" w
+      -- pure ()
 
+failOnError :: Show err => IO (Either err b) -> IO b
+failOnError v = v >>= \case
+  Left err -> fail $ show err
+  Right val -> pure val
 
 readMetadata :: Handle -> IO TT.FileMetadata
 readMetadata h = do
   hSeek h SeekFromEnd (-8)
   !metadataSize <- runHandleGet h BG.getWord32le
   hSeek h SeekFromEnd (- (8 + fromIntegral metadataSize))
-  decodeSized h metadataSize >>= \case
-    Left err  -> fail err
-    Right val -> pure val
+  failOnError $ decodeSized h metadataSize
 
 decodeSized :: forall a size. (Integral size, Pinch.Pinchable a) => Handle -> size -> IO (Either String a)
 decodeSized h size = do
-  decode <$> runHandleGet h (BG.getByteString (fromIntegral size))
+  pos <- hTell h
+  !bs <- runHandleGet h $ BG.getByteString (fromIntegral size)
+  case decode bs of
+    Left err -> pure $ Left err
+    Right (leftovers, val) ->
+      hSeek h AbsoluteSeek (fromIntegral $ fromIntegral pos + BS.length bs - BS.length leftovers) $> Right val
 
-decode :: forall a. Pinch.Pinchable a => BS.ByteString -> Either String a
-decode = Pinch.decode Pinch.compactProtocol
+decode :: forall a. Pinch.Pinchable a => BS.ByteString -> Either String (BS.ByteString, a)
+decode = Pinch.decodeWithLeftovers Pinch.compactProtocol
 
 runHandleGet :: Handle -> BG.Get a -> IO a
 runHandleGet h get = do
-  bytes <- BL.hGetContents h
-  return $ BG.runGet get bytes
+  pos <- hTell h
+  !bytes <- LBS.hGetContents h
+  case BG.runGetOrFail get bytes of
+    Left too_much_info ->
+      fail $ "Partial runGetOrFail failed: " <> show too_much_info
+    Right (_, consumed, res) -> do
+      hSeek h AbsoluteSeek $ fromIntegral (fromIntegral pos + consumed)
+      pure res

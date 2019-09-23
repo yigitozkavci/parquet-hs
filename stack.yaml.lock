@@ -5,12 +5,19 @@
 
 packages:
 - completed:
-    hackage: pinch-0.3.4.1@sha256:262ee0d82a2e141b0a1fe2caf1ec48199c334775fdb845f08e08fff3894bd06b,3931
+    cabal-file:
+      size: 3931
+      sha256: 262ee0d82a2e141b0a1fe2caf1ec48199c334775fdb845f08e08fff3894bd06b
+    name: pinch
+    version: 0.3.4.1
+    git: https://github.com/yigitozkavci/pinch.git
     pantry-tree:
-      size: 2785
-      sha256: f63ca1ae7f05380ddc9024544a86c28c66f4c3ba5188db2e4253a4d8052a7de3
+      size: 3409
+      sha256: 6dd5d32fab9e31b38b4861521b47ee11ae3d77b62eefdca46406cc65cf1f7dbd
+    commit: 4ed982e49070579b9ebc219e2d2b539f86ab73a8
   original:
-    hackage: pinch-0.3.4.1
+    git: https://github.com/yigitozkavci/pinch.git
+    commit: 4ed982e49070579b9ebc219e2d2b539f86ab73a8
 snapshots:
 - completed:
     size: 524127

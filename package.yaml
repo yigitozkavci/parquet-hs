@@ -22,17 +22,23 @@ description:         Please see the README on GitHub at <https://github.com/gith
 dependencies:
 - base >= 4.7 && < 5
 
-executables:
-  parquet-hs-exe:
-    main:                Main.hs
-    source-dirs:         src
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+library:
+  source-dirs:         src
+  ghc-options:         -Wall
+  dependencies:
+  - pinch
+  - text
+  - bytestring
+  - binary
+  - pretty-simple
+
+tests:
+  parquet-hs-test:
+    main: Spec.hs
+    type: exitcode-stdio-1.0
+    source-dirs: tests
     dependencies:
-    - pinch
-    - text
+    - parquet-hs
+    - hspec
+    - QuickCheck
     - bytestring
-    - binary
-    - pretty-simple
