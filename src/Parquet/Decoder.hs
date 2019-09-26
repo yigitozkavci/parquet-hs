@@ -5,10 +5,8 @@ import           Data.Bits
 import qualified Data.ByteString as BS
 import           Data.Word       (Word32, Word8)
 import Control.Monad
-import Text.Printf
-import Debug.Trace
 
-cLeb128ByteLimit :: Num a => a
+cLeb128ByteLimit :: Int
 cLeb128ByteLimit = 32
 
 takeBytesLe :: Word8 -> Get Integer
@@ -22,21 +20,21 @@ takeBytesBe :: Int -> Word8 -> Get Integer
 takeBytesBe = go
   where
     go :: Int -> Word8 -> Get Integer
-    go sh 0 = pure 0
+    go _ 0 = pure 0
     go sh n = do
       v <- getWord8
       rest <- go (sh - 1) (n - 1)
       pure $ (fromIntegral v `shiftL` (8 * (sh - 1))) .|. rest
 
 decodeBPBE :: Word8 -> Word32 -> Get [Word32]
-decodeBPBE bit_width 0 = pure []
+decodeBPBE _ 0 = pure []
 decodeBPBE bit_width scaled_run_len = do
   v <- takeBytesBe (fromIntegral bit_width) bit_width
   batch_bytes <- go 8 v
   (batch_bytes <>) <$> decodeBPBE bit_width (scaled_run_len - 1)
   where
     go :: Int -> Integer -> Get [Word32]
-    go 0 data_bytes = pure []
+    go 0 _ = pure []
     go rem_vals data_bytes = do
       let mask :: Integer
           mask = ((2 ^ bit_width) - 1) `shiftL` (fromIntegral bit_width * 7)
@@ -48,14 +46,14 @@ decodeBPBE bit_width scaled_run_len = do
       pure $ val:rest
 
 decodeBPLE :: Word8 -> Word32 -> Get [Word32]
-decodeBPLE bit_width 0 = pure []
+decodeBPLE _ 0 = pure []
 decodeBPLE bit_width scaled_run_len = do
   v <- takeBytesLe bit_width
   batch_bytes <- go 8 v
   (batch_bytes <>) <$> decodeBPLE bit_width (scaled_run_len - 1)
   where
     go :: Int -> Integer -> Get [Word32]
-    go 0 data_bytes = pure []
+    go 0 _ = pure []
     go rem_vals data_bytes = do
       let mask = (2 ^ bit_width) - 1
       -- Unsafe fromInteger justification:
@@ -86,7 +84,7 @@ decodeHybrid bit_width = do
   where
     run :: Word32 -> Get [Word32]
     run 0 = pure []
-    run rem = do
+    run _rem = do
       header <- decodeVarint
       let encoding_ty = header .&. 0x01
       let run_len = header `shiftR` 1
@@ -100,7 +98,7 @@ decodeHybrid bit_width = do
           -- Unsafe fromInteger justification:
           -- run_len value being in range [1, 2^31-1]
           -- is guaranteed by the protocol.
-          decodeBP_LE bit_width $ fromInteger run_len
+          decodeBPLE bit_width $ fromInteger run_len
         _ ->
           fail "Impossible happened! 0x01 .&. _ resulted in a value larger than 0x01"
 

@@ -8,7 +8,6 @@ module Parquet.Reader where
 import qualified Data.Binary.Get            as BG
 import qualified Data.ByteString.Char8      as BS
 import qualified Data.ByteString.Lazy       as LBS
-import qualified Data.ByteString.Lazy.Char8 as LBS
 import           Data.Foldable
 import           Data.Functor               (($>))
 import qualified Parquet.ThriftTypes        as TT
@@ -41,7 +40,7 @@ readColumnChunk h cc = do
       let Pinch.Field size = TT._ColumnMetaData_total_compressed_size metadata
       page_header <- failOnError $ decodeSized @TT.PageHeader h size
       pPrint page_header
-      let Pinch.Field page_size = TT._PageHeader_uncompressed_page_size page_header
+      let Pinch.Field _page_size = TT._PageHeader_uncompressed_page_size page_header
       -- !len <- runHandleGet h BG.getWord32le
       -- printf "%d\n" len
       !w <- runHandleGet h BG.getWord8
