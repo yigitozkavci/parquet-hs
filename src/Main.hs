@@ -2,7 +2,9 @@ module Main where
 
 import           Parquet.Reader
 import           System.IO
+import Control.Monad.Except
 
 main :: IO ()
-main =
-  goRead =<< openFile "test.parquet" ReadMode
+main = openFile "test.parquet" ReadMode
+   >>= runExceptT . goRead
+   >>= print

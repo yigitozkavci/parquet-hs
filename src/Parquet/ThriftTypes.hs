@@ -194,16 +194,16 @@ data FieldRepetitionType
 instance Pinchable FieldRepetitionType
 
 data SchemaElement = SchemaElement
-  { _type            :: Field 1 (Maybe Type)
-  , _type_length     :: Field 2 (Maybe Int32)
-  , _repetition_type :: Field 3 (Maybe FieldRepetitionType)
-  , _name            :: Field 4 Text
-  , _num_children    :: Field 5 (Maybe Int32)
-  , _converted_type  :: Field 6 (Maybe ConvertedType)
-  , _scale           :: Field 7 (Maybe Int32)
-  , _precision       ::  Field 8 (Maybe Int32)
-  , _field_id        :: Field 9 (Maybe Int32)
-  , _logicalType     :: Field 10 (Maybe LogicalType)
+  { _SchemaElement_type            :: Field 1 (Maybe Type)
+  , _SchemaElement_type_length     :: Field 2 (Maybe Int32)
+  , _SchemaElement_repetition_type :: Field 3 (Maybe FieldRepetitionType)
+  , _SchemaElement_name            :: Field 4 Text
+  , _SchemaElement_num_children    :: Field 5 (Maybe Int32)
+  , _SchemaElement_converted_type  :: Field 6 (Maybe ConvertedType)
+  , _SchemaElement_scale           :: Field 7 (Maybe Int32)
+  , _SchemaElement_precision       ::  Field 8 (Maybe Int32)
+  , _SchemaElement_field_id        :: Field 9 (Maybe Int32)
+  , _SchemaElement_logicalType     :: Field 10 (Maybe LogicalType)
   }
   deriving (Show, Eq, Generic)
 instance Pinchable SchemaElement
@@ -422,3 +422,6 @@ data DataPageHeaderV2 = DataPageHeaderV2
   , _DataPageHeaderV2_statistics :: Field 8 (Maybe Statistics)
   } deriving (Show, Eq, Generic)
 instance Pinchable DataPageHeaderV2
+
+unField :: Field n a -> a
+unField (Field a) = a

@@ -1,10 +1,10 @@
 name:                parquet-hs
 version:             0.1.0.0
-github:              "githubuser/parquet-hs"
+github:              "winkduo/parquet-hs"
 license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2019 Author name here"
+author:              "Yigit Ozkavci"
+maintainer:          "yigitozkavci8@gmail.com"
+copyright:           "2019 Yigit Ozkavci"
 
 extra-source-files:
 - README.md
@@ -31,6 +31,9 @@ library:
   - bytestring
   - binary
   - pretty-simple
+  - error-util
+  - mtl
+  - containers
 
 tests:
   parquet-hs-test:
