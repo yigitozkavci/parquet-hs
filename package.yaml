@@ -42,3 +42,4 @@ tests:
     - hspec
     - QuickCheck
     - bytestring
+    - binary
