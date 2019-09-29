@@ -1,45 +1,37 @@
-{-# LANGUAGE BangPatterns     #-}
-{-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE LambdaCase       #-}
-{-# LANGUAGE RankNTypes       #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Parquet.Reader where
 
-import qualified Data.Binary.Get            as BG
-import qualified Data.ByteString.Char8      as BS
-import qualified Data.ByteString.Lazy       as LBS
+import qualified Conduit               as C
+import           Control.Arrow         ((&&&))
+import           Control.Monad.Except
+import           Control.Monad.Logger
+import           Control.Monad.Reader
+import           Data.Bifunctor        (first)
+import qualified Data.Binary.Get       as BG
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy  as LBS
 import           Data.Foldable
-import           Data.Functor               (($>))
-import qualified Parquet.ThriftTypes        as TT
+import qualified Data.Map              as M
+import qualified Data.Text             as T
+import           Parquet.Monad         (PR)
+import           Parquet.PREnv
+import           Parquet.Stream.Reader
+import qualified Parquet.ThriftTypes   as TT
 import qualified Pinch
 import           System.IO
-import           Text.Pretty.Simple
-import           Text.Printf
-import Control.Monad.Except
-import Control.Monad.Reader
-import qualified Data.Map as M
-import Control.Arrow ((&&&))
-import qualified Data.Text as T
-import qualified Data.List.NonEmpty as NE
-import Data.Bifunctor (first)
-import Data.Traversable (for)
-import Data.Word (Word8)
-import Parquet.Decoder (decodeHybrid)
-import Data.Int (Int32)
 
 (<??>) :: MonadError b m => Maybe a -> b -> m a
 (<??>) Nothing err = throwError err
-(<??>) (Just v) _ = pure v
+(<??>) (Just v) _  = pure v
 
 infixl 4 <??>
-
-type PR m = (MonadReader PREnv m, MonadError T.Text m, MonadIO m)
-
-newtype PREnv = PREnv { _prEnvSchema :: M.Map T.Text TT.SchemaElement }
 
 goRead :: Handle -> ExceptT T.Text IO ()
 goRead h = do
@@ -48,87 +40,51 @@ goRead h = do
   let schema_mapping = M.fromList $ map (TT.unField . TT._SchemaElement_name &&& id) schema
   let Pinch.Field row_groups = TT._FileMetadata_row_groups metadata
   let env = PREnv schema_mapping
-  flip runReaderT env $ traverse_ (readRowGroup h) row_groups
+  runStdoutLoggingT $
+    flip runReaderT env $
+    traverse_ (readRowGroup h) row_groups
 
-readRowGroup :: (PR m) => Handle -> TT.RowGroup -> m ()
+readRowGroup :: (MonadIO m, PR m) => Handle -> TT.RowGroup -> m ()
 readRowGroup h row_group = do
   let Pinch.Field column_chunks = TT._RowGroup_column_chunks row_group
   traverse_ (readColumnChunk h) column_chunks
 
-getRepType :: MonadError T.Text m => TT.SchemaElement -> m TT.FieldRepetitionType
-getRepType elem =
-  let
-    Pinch.Field mb_rep_type = TT._SchemaElement_repetition_type elem
-  in
-    mb_rep_type <??> "Repetition type could not be found for elem " <> T.pack (show elem)
-
--- | Algorithm:
--- https://blog.twitter.com/engineering/en_us/a/2013/dremel-made-simple-with-parquet.html
-calcMaxEncodingLevels :: PR m => NE.NonEmpty T.Text -> m (Word8, Word8)
-calcMaxEncodingLevels path = do
-  schema <- asks _prEnvSchema
-  filled_path <- for path $ \name ->
-                   M.lookup name schema <??> "Schema Element cannot be found: " <> name
-  foldM (\(def, rep) elem -> do
-      getRepType elem >>= \case
-        (TT.REQUIRED _) ->
-          pure (def, rep)
-        (TT.OPTIONAL _) ->
-          pure (def + 1, rep)
-        (TT.REPEATED _) ->
-          pure (def + 1, rep + 1)
-    ) (0, 0) filled_path
-
-readColumnChunk :: forall m. PR m => Handle -> TT.ColumnChunk -> m ()
+readColumnChunk :: forall m. (MonadIO m, PR m) => Handle -> TT.ColumnChunk -> m ()
 readColumnChunk h cc = do
   let Pinch.Field offset = TT._ColumnChunk_file_offset cc
 
-  -- Reading metadata
   let Pinch.Field mb_metadata = TT._ColumnChunk_meta_data cc
   metadata <- mb_metadata <??> "Metadata could not be found"
-  -- pPrint metadata
 
-  -- Reading page header
+  let Pinch.Field compression = TT._ColumnMetaData_codec metadata
+  case compression of
+    TT.UNCOMPRESSED _ ->
+      pure ()
+    _ ->
+      throwError "This library doesn't support compression algorithms yet."
+
   liftIO $ hSeek h AbsoluteSeek (fromIntegral offset)
 
   let Pinch.Field size = TT._ColumnMetaData_total_compressed_size metadata
-  page_header <- decodeSized @TT.PageHeader h size
-  pPrint page_header
-  let Pinch.Field page_size = TT._PageHeader_uncompressed_page_size page_header
-  let Pinch.Field mb_dp_header = TT._PageHeader_data_page_header page_header
-  case mb_dp_header of
-    Nothing ->
-      pure ()
-    Just dp_header -> do
-      let Pinch.Field rep_level_encoding = TT._DataPageHeader_repetition_level_encoding dp_header
-      pPrint rep_level_encoding
-      let Pinch.Field def_level_encoding = TT._DataPageHeader_definition_level_encoding dp_header
-      let Pinch.Field path = TT._ColumnMetaData_path_in_schema metadata
-      ne_path <- NE.nonEmpty path <??> "Schema path cannot be empty"
-      (max_rep_level, max_def_level) <- calcMaxEncodingLevels ne_path
-      read_rep page_size ne_path max_rep_level
-      read_def ne_path max_def_level
-  where
-    read_rep :: Int32 -> NE.NonEmpty T.Text -> Word8 -> m ()
-    read_rep size ne_path max_level =
-      when (NE.length ne_path > 1) $ do
-        liftIO $ pPrint =<< runHandleGet h (decodeHybrid max_level)
-        pure ()
+  let Pinch.Field column_ty = TT._ColumnMetaData_type metadata
+  let Pinch.Field dp_offset = TT._ColumnMetaData_data_page_offset metadata
+  let Pinch.Field path = TT._ColumnMetaData_path_in_schema metadata
 
-    read_def :: NE.NonEmpty T.Text -> Word8 -> m ()
-    read_def ne_path max_level = do
-      schema <- asks _prEnvSchema
-      last_elem <- M.lookup (NE.head (NE.reverse ne_path)) schema <??> "Schema element could not be found"
-      le_rep_ty <- getRepType last_elem
-      case le_rep_ty of
-        TT.OPTIONAL _ ->
-          go
-        TT.REPEATED _ ->
-          go
-        TT.REQUIRED _ ->
-          pure ()
-      where
-        go = pure ()
+  liftIO $ hSeek h AbsoluteSeek (fromIntegral dp_offset)
+
+  -- TODO(yigitozkavci): Transfer these decodeSized methods calls to Conduit
+  -- as well.
+  !page_header <- decodeSized @TT.PageHeader h size
+
+  -- TODO(yigitozkavci): There are multiple pages in a column chunk.
+  -- Read the rest of them. total_compressed_size has the size for all of
+  -- the pages, that can be used to see when to end reading.
+  !buf <- liftIO $ runHandleGet h $ BG.getByteString (fromIntegral size)
+  !_page_content <- C.runConduit
+                $ C.yield buf
+             C..| readPage page_header path column_ty
+     `C.fuseBoth` pure ()
+  pure ()
 
 failOnError :: Show err => IO (Either err b) -> IO b
 failOnError v = v >>= \case
@@ -142,14 +98,17 @@ readMetadata h = do
   liftIO $ hSeek h SeekFromEnd (- (8 + fromIntegral metadataSize))
   decodeSized h metadataSize
 
+-- | TODO: This is utterly inefficient. Fix it.
 decodeSized :: forall a m size. (MonadError T.Text m, MonadIO m, Integral size, Pinch.Pinchable a) => Handle -> size -> m a
 decodeSized h size = do
   pos <- liftIO $ hTell h
   !bs <- liftIO $ runHandleGet h $ BG.getByteString (fromIntegral size)
   case decode bs of
     Left err -> throwError err
-    Right (leftovers, val) ->
-      liftIO (hSeek h AbsoluteSeek (fromIntegral $ fromIntegral pos + BS.length bs - BS.length leftovers)) $> val
+    Right (leftovers, val) -> do
+      let new_pos = fromIntegral $ fromIntegral pos + fromIntegral size - BS.length leftovers
+      liftIO (hSeek h AbsoluteSeek new_pos)
+      pure val
 
 decode :: forall a. Pinch.Pinchable a => BS.ByteString -> Either T.Text (BS.ByteString, a)
 decode = first T.pack . Pinch.decodeWithLeftovers Pinch.compactProtocol

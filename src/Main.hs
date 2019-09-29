@@ -1,8 +1,8 @@
 module Main where
 
+import           Control.Monad.Except
 import           Parquet.Reader
 import           System.IO
-import Control.Monad.Except
 
 main :: IO ()
 main = openFile "test.parquet" ReadMode

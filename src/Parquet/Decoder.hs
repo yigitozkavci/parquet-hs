@@ -1,10 +1,16 @@
+{-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 module Parquet.Decoder where
 
 import           Data.Binary.Get
+import           Data.Binary.Put
 import           Data.Bits
-import qualified Data.ByteString as BS
-import           Data.Word       (Word32, Word8)
-import Control.Monad
+import qualified Data.ByteString    as BS
+import qualified Data.Text.Lazy     as T
+import           Data.Word          (Word32, Word8)
+import           Debug.Trace
+import           Text.Pretty.Simple
 
 cLeb128ByteLimit :: Int
 cLeb128ByteLimit = 32
@@ -26,13 +32,25 @@ takeBytesBe = go
       rest <- go (sh - 1) (n - 1)
       pure $ (fromIntegral v `shiftL` (8 * (sh - 1))) .|. rest
 
-decodeBPBE :: Word8 -> Word32 -> Get [Word32]
-decodeBPBE _ 0 = pure []
-decodeBPBE bit_width scaled_run_len = do
-  v <- takeBytesBe (fromIntegral bit_width) bit_width
-  batch_bytes <- go 8 v
-  (batch_bytes <>) <$> decodeBPBE bit_width (scaled_run_len - 1)
+t :: Show a => a -> a
+t a = trace (T.unpack $ "\n" <> pShow a) a
+
+tm :: (Monad m, Show a) => a -> m ()
+tm a = trace (T.unpack $ "\n" <> pShow a) (pure ())
+
+decodeBPBE :: Word8 -> Get [Word32]
+decodeBPBE bit_width = do
+  header <- decodeVarint
+  let run_len = header `shiftR` 1
+  run $ fromInteger run_len
   where
+    run :: Word32 -> Get [Word32]
+    run 0 = pure []
+    run scaled_run_len = do
+      v <- takeBytesBe (fromIntegral bit_width) bit_width
+      !batch_bytes <- go 8 v
+      (batch_bytes <>) <$> run (scaled_run_len - 1)
+
     go :: Int -> Integer -> Get [Word32]
     go 0 _ = pure []
     go rem_vals data_bytes = do
@@ -48,7 +66,7 @@ decodeBPBE bit_width scaled_run_len = do
 decodeBPLE :: Word8 -> Word32 -> Get [Word32]
 decodeBPLE _ 0 = pure []
 decodeBPLE bit_width scaled_run_len = do
-  v <- takeBytesLe bit_width
+  !v <- takeBytesLe bit_width
   batch_bytes <- go 8 v
   (batch_bytes <>) <$> decodeBPLE bit_width (scaled_run_len - 1)
   where
@@ -64,30 +82,30 @@ decodeBPLE bit_width scaled_run_len = do
       pure $ val:rest
 
 decodeRLE :: Word8 -> Word32 -> Get [Word32]
-decodeRLE bit_width run_len =
-  replicateM (fromIntegral run_len) $
-    unsafe_bs_to_w32 . BS.unpack <$> getByteString (fromIntegral fixed_width)
+decodeRLE bit_width run_len = do
+  !result <- unsafe_bs_to_w32 . BS.unpack <$> getByteString (fromIntegral fixed_width)
+  pure (replicate (fromIntegral run_len) result)
   where
     fixed_width :: Word8
-    fixed_width = (bit_width - 1) `div` 8
+    fixed_width = ((bit_width - 1) `div` 8) + 1
 
     -- TODO(yigitozkavci): We can do a safety check here. In
     -- case of overflow we get 0 as an answer.
     unsafe_bs_to_w32 :: [Word8] -> Word32
     unsafe_bs_to_w32 =
-      foldr (\x -> ((fromIntegral x `shiftL` 8) .|.)) 0
+      foldr (\x -> (fromIntegral x .|.) . (`shiftL` 8)) 0
 
 decodeHybrid :: Word8 -> Get [Word32]
 decodeHybrid bit_width = do
-  len <- getWord32le
-  run len
+  !_byte_len <- getWord32le
+  !v <- run
+  pure v
   where
-    run :: Word32 -> Get [Word32]
-    run 0 = pure []
-    run _rem = do
+    run :: Get [Word32]
+    run = do
       header <- decodeVarint
       let encoding_ty = header .&. 0x01
-      let run_len = header `shiftR` 1
+      let !run_len = header `shiftR` 1
       case encoding_ty of
         0x00 ->
           -- Unsafe fromInteger justification:
@@ -115,3 +133,13 @@ decodeVarint = go cLeb128ByteLimit 0 0
       if high == 0x80
         then go (rem_limit - 1) res (sh + 7)
         else pure res
+
+encodeVarint :: Integer -> Put
+encodeVarint 0 = pure ()
+encodeVarint val = do
+  let low = fromIntegral $ val .&. 0x7F
+  if val `shiftR` 7 == 0
+    then putWord8 low
+    else do
+      putWord8 $ low .|. 0x80
+      encodeVarint (val `shiftR` 7)
