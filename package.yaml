@@ -37,6 +37,7 @@ library:
   - conduit
   - binary-conduit
   - monad-logger
+  - conduit-extra
 
 tests:
   parquet-hs-test:

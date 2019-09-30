@@ -1,7 +1,7 @@
 module Parquet.Decoder.Spec (spec) where
 
-import           Data.Binary.Put
 import           Data.Binary.Get       (getWord8, lookAhead, runGetOrFail)
+import           Data.Binary.Put
 import qualified Data.ByteString       as BS
 import qualified Data.ByteString.Lazy  as LBS
 import           Parquet.Decoder
