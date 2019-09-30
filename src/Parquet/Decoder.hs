@@ -95,8 +95,8 @@ decodeRLE bit_width run_len = do
     unsafe_bs_to_w32 =
       foldr (\x -> (fromIntegral x .|.) . (`shiftL` 8)) 0
 
-decodeHybrid :: Word8 -> Get [Word32]
-decodeHybrid bit_width = do
+decodeRLEBPHybrid :: Word8 -> Get [Word32]
+decodeRLEBPHybrid bit_width = do
   !_byte_len <- getWord32le
   !v <- run
   pure v

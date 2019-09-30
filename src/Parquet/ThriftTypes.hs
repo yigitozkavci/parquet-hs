@@ -70,13 +70,6 @@ data TimeType = TimeType
   } deriving (Show, Eq, Generic)
 instance Pinchable TimeType
 
--- qs -> struct
--- qd -> struct derive
--- qf -> struct field
--- qe -> empty struct
--- qb -> clear space
--- qt -> enum field
-
 data MilliSeconds = MilliSeconds
   deriving (Show, Eq, Generic)
 instance Pinchable MilliSeconds where
