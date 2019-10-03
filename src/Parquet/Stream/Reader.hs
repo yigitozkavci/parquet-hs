@@ -47,8 +47,15 @@ dataPageReader header = do
   let Pinch.Field def_level_encoding = TT._DataPageHeader_definition_level_encoding header
   (max_rep_level, max_def_level) <- calcMaxEncodingLevels
   pLog =<< asks _pcColumnTy
-  _rep_data <- readRepetitionLevel rep_level_encoding max_rep_level
-  _def_data <- readDefinitionLevel def_level_encoding max_def_level
+  pLog =<< asks _pcPath
+  pLog (max_rep_level, max_def_level)
+  pLog =<< asks _pcSchema
+  pLog "Reading rep data"
+  pLog =<< readRepetitionLevel rep_level_encoding max_rep_level
+  pLog "Reading def data"
+  pLog =<< readDefinitionLevel def_level_encoding max_def_level
+  pLog "Reading value"
+  pLog num_values
   val <- replicateM (fromIntegral num_values) decodeValue
   pLog val
   pure []
@@ -71,19 +78,25 @@ decodeValue =
     ty ->
       throwError $ "Don't know how to decode value of type " <> T.pack (show ty) <> " yet."
 
-indexPageReader :: TT.IndexPageHeader -> C.ConduitT BS.ByteString BS.ByteString m0 [Word8]
+indexPageReader :: TT.IndexPageHeader -> C.ConduitT BS.ByteString BS.ByteString m [Word8]
 indexPageReader = undefined
 
-dataPageV2Header :: TT.DataPageHeaderV2 -> C.ConduitT BS.ByteString BS.ByteString m0 [Word8]
+dataPageV2Header :: TT.DataPageHeaderV2 -> C.ConduitT BS.ByteString BS.ByteString m [Word8]
 dataPageV2Header = undefined
 
-dictPageReader :: TT.DictionaryPageHeader -> C.ConduitT BS.ByteString BS.ByteString m0 [Word8]
-dictPageReader _header = undefined
+dictPageReader :: (PR m, MonadReader PageCtx m) => TT.DictionaryPageHeader -> C.ConduitT BS.ByteString BS.ByteString m [Word8]
+dictPageReader header = do
+  pLog header
+  let Pinch.Field num_values = TT._DictionaryPageHeader_num_values header
+  let Pinch.Field encoding = TT._DictionaryPageHeader_encoding header
+  let Pinch.Field is_sorted = TT._DictionaryPageHeader_is_sorted header
+  pLog =<< decodeValue
+  pure []
 
 newtype PageReader = PageReader (forall m0. (PR m0, MonadReader PageCtx m0) => C.ConduitT BS.ByteString BS.ByteString m0 [Word8])
 
 mkPageReader
-  :: forall m. MonadError T.Text m
+  :: forall m. (MonadError T.Text m, MonadLogger m)
   => TT.PageHeader
   -> m PageReader
 mkPageReader page_header = do
@@ -91,6 +104,7 @@ mkPageReader page_header = do
   let Pinch.Field mb_index_page_header = TT._PageHeader_index_page_header page_header
   let Pinch.Field mb_dict_page_header = TT._PageHeader_dictionary_page_header page_header
   let Pinch.Field mb_data_page_v2_header = TT._PageHeader_data_page_header_v2 page_header
+  pLog (mb_data_page_header, mb_index_page_header, mb_dict_page_header, mb_data_page_v2_header)
   case (mb_data_page_header, mb_index_page_header, mb_dict_page_header, mb_data_page_v2_header) of
     (Just dp_header, _, _, _) ->
       pure $ PageReader $ dataPageReader dp_header
@@ -142,12 +156,15 @@ readDefinitionLevel encoding max_level = do
       pure []
 
 decodeLevel
-  :: (C.MonadThrow m, MonadError T.Text m)
+  :: (C.MonadThrow m, MonadError T.Text m, MonadLogger m)
   => TT.Encoding
   -> Word8
   -> C.ConduitT BS.ByteString BS.ByteString m [Word32]
 decodeLevel encoding max_level = do
-  let bit_width = floor (logBase 2 (fromIntegral max_level + 1) :: Double)
+  let bit_width = floor (logBase 2 (fromIntegral max_level) :: Double) + 1
+  pLog max_level
+  pLog "Bit width"
+  pLog bit_width
   case encoding of
     TT.RLE _ ->
       C.sinkGet $ decodeRLEBPHybrid bit_width
@@ -157,7 +174,7 @@ decodeLevel encoding max_level = do
       throwError "Only RLE and BIT_PACKED encodings are supported for definition levels"
 
 readRepetitionLevel
-  :: (C.MonadThrow m, MonadError T.Text m, MonadReader PageCtx m)
+  :: (C.MonadThrow m, MonadError T.Text m, MonadReader PageCtx m, MonadLogger m)
   => TT.Encoding
   -> Word8
   -> C.ConduitT BS.ByteString BS.ByteString m [Word32]
