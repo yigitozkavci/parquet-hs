@@ -40,8 +40,7 @@ packages:
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 #
 extra-deps:
-  - git: https://github.com/yigitozkavci/pinch.git
-    commit: 4ed982e49070579b9ebc219e2d2b539f86ab73a8
+  - pinch-0.3.5.0
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
