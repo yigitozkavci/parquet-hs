@@ -1,13 +1,24 @@
-{-# LANGUAGE DataKinds     #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE TypeFamilies  #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Parquet.ThriftTypes where
 
 import           Data.ByteString
+import qualified Data.Generics.Product.Fields    as GL
+import qualified Data.Generics.Product.Positions as GL
 import           Data.Int
 import           Data.Text
-import           GHC.Generics    (Generic)
+import           GHC.Generics
+import           GHC.TypeLits                    (AppendSymbol, Symbol)
+import           Lens.Micro
 import           Pinch
 
 data StringType = StringType
@@ -52,11 +63,30 @@ instance Pinchable DateType where
   pinch _ = struct []
   unpinch _ = pure DateType
 
+type family TypeName a :: Symbol where
+  TypeName (M1 D ('MetaData name _ _ _) f ()) = name
+  TypeName a = TypeName (Rep a ())
+
+pinchPos
+  :: forall pos s t a1 b1 a2 b2.
+     (GL.HasPosition 1 a1 b1 a2 b2, GL.HasPosition pos s t a1 b1)
+  => Lens s t a2 b2
+pinchPos = GL.position @pos . GL.position @1
+
+pinchField
+  :: forall field s i r field_name.
+     ( field_name ~ ("_" `AppendSymbol` TypeName s `AppendSymbol` "_" `AppendSymbol` field)
+     , GL.HasPosition 1 i i r r
+     , GL.HasField field_name s s i i)
+  => Lens s s r r
+pinchField = GL.field @field_name . GL.position @1
+
 data DecimalType = DecimalType
   { _DecimalType_scale     :: Field 1 Int32
   , _DecimalType_precision :: Field 2 Int32
   } deriving (Show, Eq, Generic)
 instance Pinchable DecimalType
+
 
 data TimestampType = TimestampType
   { _TimestampType_isAdjustedToUTC :: Field 1 Bool

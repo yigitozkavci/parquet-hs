@@ -14,8 +14,35 @@ spec = describe "Decoder" $ do
   it "can decode from little endian bit packing" $
     runGetOrFail (decodeBPLE 3 1) (LBS.pack [136, 198, 250]) `shouldBe` Right (LBS.empty, 3, [0, 1, 2, 3, 4, 5, 6, 7])
 
+  it "can decode from little endian bit packing with 0 padding" $
+    -- There are 5 values: [0, 5)
+    -- Bit packing is 3
+    -- Scaled run len is: 1 (and run len is 8) because we keep 5 values
+    --
+    -- Result type is (Either Error (Unconsumed bytes, consumed byte len, result))
+    -- In this case we decode 5 values but due to parquet only bit-packs
+    -- a multiple of 8 values at once, we still have to consume them.
+    -- Docs:
+    -- https://github.com/apache/parquet-format/blob/master/Encodings.md#run-length-encoding--bit-packing-hybrid-rle--3
+    runGetOrFail
+      (decodeBPLE 3 1)
+      (LBS.pack [0x88, 0x46, 0x00, 0x00])
+      `shouldBe`
+      Right (LBS.pack [0], 3, [0, 1, 2, 3, 4, 0, 0, 0])
+
   it "can decode from big endian bit packing" $
-    runGetOrFail (decodeBPBE 3) (runPut (encodeVarint 3) <> LBS.pack [5, 57, 119]) `shouldBe` Right (LBS.empty, 4, [0, 1, 2, 3, 4, 5, 6, 7])
+    runGetOrFail
+      (decodeBPBE 3)
+      (runPut (encodeVarint 3) <> LBS.pack [5, 57, 119])
+      `shouldBe`
+      Right (LBS.empty, 4, [0, 1, 2, 3, 4, 5, 6, 7])
+
+  it "can do run length encoding (RLE)" $
+    runGetOrFail
+      (decodeRLE 3 4)
+      (LBS.pack [1, 2, 3, 4, 5])
+      `shouldBe`
+      Right (LBS.pack [2, 3, 4, 5], 1, [1, 1, 1, 1])
 
   it "can takeBytesLe" $
     runGetOrFail (takeBytesLe 3) (LBS.pack [136, 198, 250]) `shouldBe` Right (LBS.empty, 3, 16434824)

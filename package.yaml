@@ -38,6 +38,8 @@ library:
   - binary-conduit
   - monad-logger
   - conduit-extra
+  - generic-lens
+  - microlens
 
 tests:
   parquet-hs-test:
