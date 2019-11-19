@@ -3,6 +3,7 @@
 
 module Parquet.Decoder where
 
+import           Control.Monad
 import           Data.Binary.Get
 import           Data.Binary.Put
 import           Data.Bits
@@ -32,14 +33,17 @@ takeBytesBe = go
       rest <- go (sh - 1) (n - 1)
       pure $ (fromIntegral v `shiftL` (8 * (sh - 1))) .|. rest
 
+newtype BitWidth = BitWidth Word8
+  deriving (Show, Eq, Ord)
+
 t :: Show a => a -> a
 t a = trace (T.unpack $ "\n" <> pShow a) a
 
 tm :: (Monad m, Show a) => a -> m ()
 tm a = trace (T.unpack $ "\n" <> pShow a) (pure ())
 
-decodeBPBE :: Word8 -> Get [Word32]
-decodeBPBE bit_width = do
+decodeBPBE :: BitWidth -> Get [Word32]
+decodeBPBE (BitWidth bit_width) = do
   header <- decodeVarint
   let run_len = header `shiftR` 1
   run $ fromInteger run_len
@@ -63,12 +67,12 @@ decodeBPBE bit_width = do
       rest <- go (rem_vals - 1) (data_bytes `shiftL` fromIntegral bit_width)
       pure $ val:rest
 
-decodeBPLE :: Word8 -> Word32 -> Get [Word32]
+decodeBPLE :: BitWidth -> Word32 -> Get [Word32]
 decodeBPLE _ 0 = pure []
-decodeBPLE bit_width scaled_run_len = do
+decodeBPLE bw@(BitWidth bit_width) scaled_run_len = do
   !v <- takeBytesLe bit_width
   batch_bytes <- go 8 v
-  (batch_bytes <>) <$> decodeBPLE bit_width (scaled_run_len - 1)
+  (batch_bytes <>) <$> decodeBPLE bw (scaled_run_len - 1)
   where
     go :: Int -> Integer -> Get [Word32]
     go 0 _ = pure []
@@ -81,13 +85,13 @@ decodeBPLE bit_width scaled_run_len = do
       rest <- go (rem_vals - 1) (data_bytes `shiftR` fromIntegral bit_width)
       pure $ val:rest
 
-decodeRLE :: Word8 -> Word32 -> Get [Word32]
-decodeRLE bit_width run_len = do
+decodeRLE :: BitWidth -> Word32 -> Get [Word32]
+decodeRLE (BitWidth bit_width) run_len = do
   !result <- unsafe_bs_to_w32 . BS.unpack <$> getByteString (fromIntegral fixed_width)
   pure (replicate (fromIntegral run_len) result)
   where
     fixed_width :: Word8
-    fixed_width = ((bit_width - 1) `div` 8) + 1
+    fixed_width = if bit_width == 0 then 0 else ((bit_width - 1) `div` 8) + 1
 
     -- TODO(yigitozkavci): We can do a safety check here. In
     -- case of overflow we get 0 as an answer.
@@ -95,30 +99,24 @@ decodeRLE bit_width run_len = do
     unsafe_bs_to_w32 =
       foldr (\x -> (fromIntegral x .|.) . (`shiftL` 8)) 0
 
-decodeRLEBPHybrid :: Word8 -> Get [Word32]
+decodeRLEBPHybrid :: BitWidth -> Get [Word32]
 decodeRLEBPHybrid bit_width = do
-  !_byte_len <- getWord32le
-  !v <- run
-  pure v
-  where
-    run :: Get [Word32]
-    run = do
-      header <- decodeVarint
-      let encoding_ty = header .&. 0x01
-      let !run_len = header `shiftR` 1
-      case encoding_ty of
-        0x00 ->
-          -- Unsafe fromInteger justification:
-          -- run_len value being in range [1, 2^31-1]
-          -- is guaranteed by the protocol.
-          decodeRLE bit_width $ fromInteger run_len
-        0x01 ->
-          -- Unsafe fromInteger justification:
-          -- run_len value being in range [1, 2^31-1]
-          -- is guaranteed by the protocol.
-          decodeBPLE bit_width $ fromInteger run_len
-        _ ->
-          fail "Impossible happened! 0x01 .&. _ resulted in a value larger than 0x01"
+  header <- decodeVarint
+  let encoding_ty = header .&. 0x01
+  let !run_len = header `shiftR` 1
+  case encoding_ty of
+    0x00 ->
+      -- Unsafe fromInteger justification:
+      -- run_len value being in range [1, 2^31-1]
+      -- is guaranteed by the protocol.
+      decodeRLE bit_width $ fromInteger run_len
+    0x01 ->
+      -- Unsafe fromInteger justification:
+      -- run_len value being in range [1, 2^31-1]
+      -- is guaranteed by the protocol.
+      decodeBPLE bit_width $ fromInteger run_len
+    _ ->
+      fail "Impossible happened! 0x01 .&. _ resulted in a value larger than 0x01"
 
 decodeVarint :: Get Integer
 decodeVarint = go cLeb128ByteLimit 0 0
