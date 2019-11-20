@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -35,6 +36,7 @@ import Lens.Micro
 import qualified Pinch
 import System.IO
 import Text.Pretty.Simple (pShow)
+import Safe.Exact (zipExactMay)
 
 import Parquet.Decoder (BitWidth(..), decodeBPBE, decodeRLEBPHybrid)
 import Parquet.Monad
@@ -53,7 +55,18 @@ replicateMSized 0 _    = pure (0, [])
 replicateMSized n comp = do
   (consumed     , result     ) <- comp
   (rest_consumed, rest_result) <- replicateMSized (n - 1) comp
-  pure (consumed + rest_consumed, rest_result ++ [result])
+  pure (consumed + rest_consumed, result : rest_result)
+
+forSized :: (Monad m) => [a] -> (a -> m (Int64, result)) -> m (Int64, [result])
+forSized = flip traverseSized
+
+traverseSized
+  :: (Monad m) => (a -> m (Int64, result)) -> [a] -> m (Int64, [result])
+traverseSized _    []       = pure (0, [])
+traverseSized comp (x : xs) = do
+  (consumed     , result     ) <- comp x
+  (rest_consumed, rest_result) <- traverseSized comp xs
+  pure (consumed + rest_consumed, result : rest_result)
 
 maxLevelToBitWidth :: Word8 -> BitWidth
 maxLevelToBitWidth 0 = BitWidth 0
@@ -65,62 +78,104 @@ dataPageReader
    . (PR m, MonadReader PageCtx m)
   => TT.DataPageHeader
   -> Maybe [Value]
-  -> C.ConduitT BS.ByteString BS.ByteString m (Int64, [Value])
+  -> C.ConduitT
+       BS.ByteString
+       BS.ByteString
+       m
+       (Int64, [(Word32, Word32, Value)])
 dataPageReader header mb_dict = do
-  pLogS "Reading a data page"
-  pLog header
   let num_values         = header ^. TT.pinchField @"num_values"
   let def_level_encoding = header ^. TT.pinchField @"definition_level_encoding"
   let rep_level_encoding = header ^. TT.pinchField @"repetition_level_encoding"
   let encoding           = header ^. TT.pinchField @"encoding"
   (max_rep_level, max_def_level) <- calcMaxEncodingLevels
-  (rep_consumed , rep_data     ) <- readRepetitionLevel
-    rep_level_encoding
-    (maxLevelToBitWidth max_rep_level)
-    num_values
-  pLog (rep_consumed, rep_data)
-  (def_consumed, def_data) <- readDefinitionLevel
-    def_level_encoding
-    (maxLevelToBitWidth max_def_level)
-    num_values
-  pLog (def_consumed, def_data)
-  (val_consumed, vals) <- case (mb_dict, encoding) of
-    (Nothing, TT.PLAIN _) -> do
-      let
-        non_null_num_values = if null def_data
-          then fromIntegral num_values
-          else length (filter (== fromIntegral max_def_level) def_data)
-      (val_consumed, vals) <- replicateMSized
-        (fromIntegral non_null_num_values)
-        decodeValue
-      pure (val_consumed, reverse vals)
-    (Just _, TT.PLAIN _) -> throwError
-      "We shouldn't have PLAIN-encoded data pages with a dictionary."
-    (Just dict, TT.PLAIN_DICTIONARY _) -> do
-      !bit_width                  <- C.sinkGet BG.getWord8
-      (val_consumed, val_indexes) <-
-        C.sinkGet $ sizedGet $ decodeRLEBPHybrid $ BitWidth bit_width
-      -- We add 1 for getWord8 above.
-      vals <- for val_indexes (find_from_dict dict)
-      pure (val_consumed + 1, vals)
-    (Nothing, TT.PLAIN_DICTIONARY _) ->
-      throwError
-        "Data page has PLAIN_DICTIONARY encoding but we don't have a dictionary yet."
-    other ->
-      throwError
-        $  "Don't know how to encode data pages with encoding: "
-        <> T.pack (show other)
-  pure (rep_consumed + def_consumed + val_consumed, vals)
+  (rep_consumed , fill_level_default num_values -> rep_data) <-
+    readRepetitionLevel
+      rep_level_encoding
+      (maxLevelToBitWidth max_rep_level)
+      num_values
+  (def_consumed, fill_level_default num_values -> def_data) <-
+    readDefinitionLevel
+      def_level_encoding
+      (maxLevelToBitWidth max_def_level)
+      num_values
+  level_data               <- zip_level_data rep_data def_data
+  (content_consumed, vals) <- read_page_content encoding level_data num_values
+  pure (rep_consumed + def_consumed + content_consumed, vals)
  where
+  find_from_dict
+    :: forall  m0 . MonadError T.Text m0 => [Value] -> Word32 -> m0 Value
   find_from_dict dict (fromIntegral -> index) = case dict ^? ix index of
     Nothing ->
       throwError $ "A dictionary value couldn't be found in index " <> T.pack
         (show index)
     Just val -> pure val
 
+  zip_level_data
+    :: forall  m0 a b . MonadError T.Text m0 => [a] -> [b] -> m0 [(a, b)]
+  zip_level_data rep_data def_data =
+    zipExactMay rep_data def_data
+      <??> (  "Repetition and Definition data sizes differ: page has "
+           <> T.pack (show (length rep_data))
+           <> " repetition values and "
+           <> T.pack (show (length def_data))
+           <> " definition values."
+           )
+
+  fill_level_default :: Int32 -> [Word32] -> [Word32]
+  fill_level_default num_values = \case
+    [] -> replicate (fromIntegral num_values) 1
+    xs -> xs
+
+  read_page_content
+    :: TT.Encoding
+    -> [(a, Word32)]
+    -> Int32
+    -> C.ConduitT
+         BS.ByteString
+         BS.ByteString
+         m
+         (Int64, [(a, Word32, Value)])
+  read_page_content encoding level_data num_values =
+    case (mb_dict, encoding) of
+      (Nothing, TT.PLAIN _) -> do
+        (val_consumed, vals) <- forSized level_data $ \(r, d) -> if d == 0
+          then pure (0, (r, 0, Null))
+          else fmap (fmap (r, d, )) decodeValue
+
+        pure (val_consumed, vals)
+      (Just _, TT.PLAIN _) -> throwError
+        "We shouldn't have PLAIN-encoded data pages with a dictionary."
+      (Just dict, TT.PLAIN_DICTIONARY _) -> do
+        !bit_width                  <- C.sinkGet BG.getWord8
+        (val_consumed, val_indexes) <- C.sinkGet $ sizedGet $ decodeRLEBPHybrid
+          (BitWidth bit_width)
+          num_values
+        -- We add 1 for getWord8 above.
+        level_and_indexes <-
+          zipExactMay level_data val_indexes
+            <??> ("Size of dictionary index differ from level data. Dictionary-encoded page has "
+                 <> T.pack (show (length val_indexes))
+                 <> " indexes and it has "
+                 <> T.pack (show (length level_data))
+                 <> " level data."
+                 )
+        vals <- for level_and_indexes $ \((r, d), val_index) -> do
+          val <- find_from_dict dict val_index
+          pure (r, d, val)
+        pure (val_consumed + 1, vals)
+      (Nothing, TT.PLAIN_DICTIONARY _) ->
+        throwError
+          "Data page has PLAIN_DICTIONARY encoding but we don't have a dictionary yet."
+      other ->
+        throwError
+          $  "Don't know how to encode data pages with encoding: "
+          <> T.pack (show other)
+
 data Value
   = ValueInt64 Int64
   | ValueByteString BS.ByteString
+  | Null
   deriving (Show, Eq)
 
 decodeValue
@@ -132,10 +187,9 @@ decodeValue = asks _pcColumnTy >>= \case
     (consumed, result) <- replicateMSized
       (fromIntegral len)
       (C.sinkGet (sizedGet BG.getWord8))
-    pure (consumed + 4, ValueByteString (BS.pack (reverse result)))
+    pure (consumed + 4, ValueByteString (BS.pack result))
   (TT.INT64 _) -> do
     (consumed, result) <- C.sinkGet (sizedGet BG.getInt64le)
-    pLog result
     pure (consumed, ValueInt64 result)
   ty ->
     throwError
@@ -143,34 +197,16 @@ decodeValue = asks _pcColumnTy >>= \case
       <> T.pack (show ty)
       <> " yet."
 
--- We add 4 for getWord32le above.
-indexPageReader
-  :: TT.IndexPageHeader
-  -> C.ConduitT BS.ByteString BS.ByteString m (Int64, [Value])
-indexPageReader = undefined
-
-dataPageV2Reader
-  :: TT.DataPageHeaderV2
-  -> C.ConduitT BS.ByteString BS.ByteString m (Int64, [Value])
-dataPageV2Reader = undefined
-
 dictPageReader
   :: (PR m, MonadReader PageCtx m)
   => TT.DictionaryPageHeader
   -> C.ConduitT BS.ByteString BS.ByteString m (Int64, [Value])
 dictPageReader header = do
-  pLogS "Reading a dictionary page"
-  pLog header
   let num_values = header ^. TT.pinchField @"num_values"
   let _encoding  = header ^. TT.pinchField @"encoding"
   let _is_sorted = header ^. TT.pinchField @"is_sorted"
   (consumed, vals) <- replicateMSized (fromIntegral num_values) decodeValue
   pure (consumed, vals)
-
-newtype PageReader =
-  PageReader
-    (forall m. (PR m, MonadReader PageCtx m) =>
-                 C.ConduitT BS.ByteString BS.ByteString m (Int64, [Value]))
 
 data PageCtx =
   PageCtx
@@ -194,8 +230,8 @@ readDefinitionLevel
   -> BitWidth
   -> Int32
   -> C.ConduitT BS.ByteString BS.ByteString m (Int64, [Word32])
-readDefinitionLevel _        (BitWidth 0) _          = pure (0, [])
-readDefinitionLevel encoding bit_width    num_values = do
+readDefinitionLevel _ (BitWidth 0) _ = pure (0, [])
+readDefinitionLevel encoding bit_width num_values =
   getLastSchemaElement >>= getRepType >>= \case
     TT.OPTIONAL _ -> decodeLevel encoding bit_width num_values
     TT.REPEATED _ -> decodeLevel encoding bit_width num_values
@@ -225,17 +261,18 @@ decodeLevel
   -> Int32
   -> C.ConduitT BS.ByteString BS.ByteString m (Int64, [Word32])
 decodeLevel _        (BitWidth 0) _                            = pure (0, [])
-decodeLevel encoding bit_width    (fromIntegral -> num_values) = do
-  case encoding of
-    TT.RLE _ ->
-      C.sinkGet
-        $  sizedGet
-        $  BG.getWord32le
-        *> (take num_values <$> decodeRLEBPHybrid bit_width)
-    TT.BIT_PACKED _ ->
-      C.sinkGet $ sizedGet $ BG.getWord32le *> decodeBPBE bit_width
-    _ ->
-      throwError "Only RLE and BIT_PACKED encodings are supported for levels"
+decodeLevel encoding bit_width (fromIntegral -> num_values) = case encoding of
+  TT.RLE _ ->
+    C.sinkGet
+      $  sizedGet
+      $  BG.getWord32le
+      *> decodeRLEBPHybrid bit_width num_values
+  TT.BIT_PACKED _ ->
+    C.sinkGet
+      $  sizedGet
+      $  BG.getWord32le
+      *> (take (fromIntegral num_values) <$> decodeBPBE bit_width)
+  _ -> throwError "Only RLE and BIT_PACKED encodings are supported for levels"
 
 -- | Algorithm:
 -- https://blog.twitter.com/engineering/en_us/a/2013/dremel-made-simple-with-parquet.html
@@ -301,15 +338,14 @@ readColumnChunk schema cc = do
   let mb_metadata = cc ^. TT.pinchField @"meta_data"
   metadata <- mb_metadata <??> "Metadata could not be found"
   validateCompression metadata
-  pLog metadata
   let size      = metadata ^. TT.pinchField @"total_compressed_size"
   let column_ty = metadata ^. TT.pinchField @"type"
   let path      = metadata ^. TT.pinchField @"path_in_schema"
-  -- TODO(yigitozkavci): There are multiple pages in a column chunk.
-  -- Read the rest of them. total_compressed_size has the size for all of
-  -- the pages, that can be used to see when to end reading.
+  pLogS "Column path"
+  pLog path
   ne_path <- NE.nonEmpty path <??> "Schema path cannot be empty"
   let page_ctx = PageCtx schema ne_path column_ty
+
   -- | TODO:
   -- C++ client implementation does the following:
   -- It starts by allowing 16KiB of size and doubles it everytime parsing fails.
@@ -317,8 +353,6 @@ readColumnChunk schema cc = do
   --
   -- We can also do that in this library. For now, let's stick with the lazy solution.
   page_content <- C.runReaderC page_ctx $ readPage size Nothing
-  pLogS "Size:"
-  pLog size
   pLogS "Page content:"
   pLog page_content
   pure ()
@@ -327,7 +361,7 @@ readPage
   :: (MonadReader PageCtx m, PR m)
   => Int64
   -> Maybe [Value]
-  -> C.ConduitT BS.ByteString BS.ByteString m [Value]
+  -> C.ConduitT BS.ByteString BS.ByteString m [(Word32, Word32, Value)]
 readPage 0         _       = pure []
 readPage remaining mb_dict = do
   (page_header_size, page_header :: TT.PageHeader) <- decodeConduit remaining

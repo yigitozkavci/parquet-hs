@@ -9,6 +9,7 @@ import Data.Bits
 import qualified Data.ByteString as BS
 import qualified Data.Text.Lazy as T
 import Data.Word (Word32, Word8)
+import Data.Int (Int32)
 import Debug.Trace
 import Text.Pretty.Simple
 
@@ -103,22 +104,19 @@ decodeRLE (BitWidth bit_width) run_len = do
   unsafe_bs_to_w32 :: [Word8] -> Word32
   unsafe_bs_to_w32 = foldr (\x -> (fromIntegral x .|.) . (`shiftL` 8)) 0
 
-decodeRLEBPHybrid :: BitWidth -> Get [Word32]
-decodeRLEBPHybrid bit_width = do
+decodeRLEBPHybrid :: BitWidth -> Int32 -> Get [Word32]
+decodeRLEBPHybrid bit_width num_values = do
   header <- decodeVarint
   let encoding_ty = header .&. 0x01
   let !run_len    = header `shiftR` 1
+
+  -- Unsafe fromInteger justification:
+  -- run_len value being in range [1, 2^31-1]
+  -- is guaranteed by the protocol.
   case encoding_ty of
-    0x00 ->
-      -- Unsafe fromInteger justification:
-      -- run_len value being in range [1, 2^31-1]
-      -- is guaranteed by the protocol.
-      decodeRLE bit_width $ fromInteger run_len
-    0x01 ->
-      -- Unsafe fromInteger justification:
-      -- run_len value being in range [1, 2^31-1]
-      -- is guaranteed by the protocol.
-      decodeBPLE bit_width $ fromInteger run_len
+    0x00 -> decodeRLE bit_width $ fromInteger run_len
+    0x01 -> take (fromIntegral num_values)
+      <$> decodeBPLE bit_width (fromInteger run_len)
     _ -> fail
       "Impossible happened! 0x01 .&. _ resulted in a value larger than 0x01"
 

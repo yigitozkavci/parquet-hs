@@ -40,6 +40,7 @@ library:
   - conduit-extra
   - generic-lens
   - microlens
+  - safe
 
 tests:
   parquet-hs-test:
