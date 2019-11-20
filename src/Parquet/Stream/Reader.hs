@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -100,7 +101,11 @@ dataPageReader header mb_dict = do
       (maxLevelToBitWidth max_def_level)
       num_values
   level_data               <- zip_level_data rep_data def_data
-  (content_consumed, vals) <- read_page_content encoding level_data num_values
+  (content_consumed, vals) <- read_page_content
+    encoding
+    level_data
+    num_values
+    (fromIntegral max_def_level)
   pure (rep_consumed + def_consumed + content_consumed, vals)
  where
   find_from_dict
@@ -131,17 +136,18 @@ dataPageReader header mb_dict = do
     :: TT.Encoding
     -> [(a, Word32)]
     -> Int32
+    -> Word32
     -> C.ConduitT
          BS.ByteString
          BS.ByteString
          m
          (Int64, [(a, Word32, Value)])
-  read_page_content encoding level_data num_values =
+  read_page_content encoding level_data num_values max_def_level =
     case (mb_dict, encoding) of
       (Nothing, TT.PLAIN _) -> do
-        (val_consumed, vals) <- forSized level_data $ \(r, d) -> if d == 0
-          then pure (0, (r, 0, Null))
-          else fmap (fmap (r, d, )) decodeValue
+        (val_consumed, vals) <- forSized level_data $ \(r, d) -> if
+          | d == max_def_level -> fmap (r, d, ) <$> decodeValue
+          | otherwise          -> pure (0, (r, d, Null))
 
         pure (val_consumed, vals)
       (Just _, TT.PLAIN _) -> throwError
@@ -152,17 +158,10 @@ dataPageReader header mb_dict = do
           (BitWidth bit_width)
           num_values
         -- We add 1 for getWord8 above.
-        level_and_indexes <-
-          zipExactMay level_data val_indexes
-            <??> ("Size of dictionary index differ from level data. Dictionary-encoded page has "
-                 <> T.pack (show (length val_indexes))
-                 <> " indexes and it has "
-                 <> T.pack (show (length level_data))
-                 <> " level data."
-                 )
-        vals <- for level_and_indexes $ \((r, d), val_index) -> do
-          val <- find_from_dict dict val_index
-          pure (r, d, val)
+        pLogS "Num values:"
+        pLog dict
+        pLog val_indexes
+        vals <- construct_dict_values max_def_level dict level_data val_indexes
         pure (val_consumed + 1, vals)
       (Nothing, TT.PLAIN_DICTIONARY _) ->
         throwError
@@ -171,6 +170,27 @@ dataPageReader header mb_dict = do
         throwError
           $  "Don't know how to encode data pages with encoding: "
           <> T.pack (show other)
+
+  -- | Given repetition and definition level data, a dictionary and a set of indexes,
+  -- constructs values for this dictionary-encoded page.
+  construct_dict_values
+    :: forall m0 rep def
+     . (MonadError T.Text m0, Eq def)
+    => def
+    -> [Value]
+    -> [(rep, def)]
+    -> [Word32]
+    -> m0 [(rep, def, Value)]
+  construct_dict_values _ _ [] _ = pure []
+  construct_dict_values _ _ _ [] =
+    throwError
+      "There are not enough level data for given amount of dictionary indexes."
+  construct_dict_values max_def_level dict ((r, d) : lx) (v : vx)
+    | d == max_def_level = do
+      val <- find_from_dict dict v
+      ((r, d, val) :) <$> construct_dict_values max_def_level dict lx vx
+    | otherwise = do
+      ((r, d, Null) :) <$> construct_dict_values max_def_level dict lx (v : vx)
 
 data Value
   = ValueInt64 Int64
