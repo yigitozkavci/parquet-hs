@@ -6,15 +6,12 @@
 module Main where
 
 import qualified Data.Conduit.List as CL
-import qualified Data.Text as T
 import qualified Conduit as C
-import Data.Foldable (traverse_)
 import Control.Monad.Except
 import Control.Monad.Logger
 import Parquet.Stream.Reader
   (readContent, readMetadata, Value, readColumnChunkS)
 import qualified System.IO as IO
-import qualified Data.ByteString as BS
 import Lens.Micro
 import Data.Word (Word32)
 import qualified Data.Map as M
@@ -22,6 +19,7 @@ import Control.Arrow ((&&&))
 import Text.Pretty.Simple (pPrint)
 
 import qualified Parquet.ThriftTypes as TT
+import Parquet.Utils (failOnExcept)
 
 main :: IO ()
 main = do
@@ -64,11 +62,7 @@ sourceColumnChunk fp metadata cc = do
         $  metadata
         ^. TT.pinchField @"schema"
   let offset = cc ^. TT.pinchField @"file_offset"
-  C.transPipe
-      (\ma -> runExceptT ma >>= \case
-        Left  err -> fail (T.unpack err)
-        Right v   -> pure v
-      )
+  C.transPipe failOnExcept
     $    C.transPipe runStdoutLoggingT
     $    C.bracketP (open_file_and_seek_to offset) IO.hClose C.sourceHandle
     C..| readColumnChunkS schema_mapping cc
