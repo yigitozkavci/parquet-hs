@@ -7,10 +7,8 @@ module Main where
 
 import qualified Data.Conduit.List as CL
 import qualified Conduit as C
-import Control.Monad.Except
 import Control.Monad.Logger
-import Parquet.Stream.Reader
-  (readContent, readMetadata, Value, readColumnChunkS)
+import Parquet.Stream.Reader (readMetadata, Value, readColumnChunk)
 import qualified System.IO as IO
 import Lens.Micro
 import Data.Word (Word32)
@@ -38,17 +36,6 @@ main = do
         chunks
       pPrint result
 
-streamReadFile :: FilePath -> TT.FileMetadata -> IO ()
-streamReadFile file_name metadata =
-  (print =<<)
-    $            runStdoutLoggingT
-    $            C.runResourceT
-    $            runExceptT
-    $            C.runConduit
-    $            C.sourceFile file_name
-    C..|         readContent metadata
-    `C.fuseBoth` pure ()
-
 sourceColumnChunk
   :: FilePath
   -> TT.FileMetadata
@@ -65,10 +52,9 @@ sourceColumnChunk fp metadata cc = do
   C.transPipe failOnExcept
     $    C.transPipe runStdoutLoggingT
     $    C.bracketP (open_file_and_seek_to offset) IO.hClose C.sourceHandle
-    C..| readColumnChunkS schema_mapping cc
+    C..| readColumnChunk schema_mapping cc
  where
   open_file_and_seek_to (fromIntegral -> offset) = do
     h <- IO.openBinaryFile fp IO.ReadMode
     IO.hSeek h IO.AbsoluteSeek offset
     pure h
--- ConduitT () GHEvent (ResourceT IO) ()

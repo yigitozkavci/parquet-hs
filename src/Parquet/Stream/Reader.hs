@@ -14,10 +14,7 @@
 module Parquet.Stream.Reader where
 
 import qualified Conduit as C
-import qualified Data.Conduit.Combinators as C
-import qualified Data.Conduit.List as CL
 import Control.Applicative (liftA3)
-import Control.Arrow ((&&&), (***), second)
 import Control.Monad.Except
 import Control.Monad.Logger
 import Control.Monad.Reader
@@ -27,7 +24,6 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.Serialization.Binary as CB
-import Data.Foldable (traverse_)
 import Data.Int (Int32, Int64)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
@@ -76,24 +72,24 @@ maxLevelToBitWidth 0 = BitWidth 0
 maxLevelToBitWidth max_level =
   BitWidth $ floor (logBase 2 (fromIntegral max_level) :: Double) + 1
 
-dataPageReaderS
+dataPageReader
   :: forall m
    . (PR m, MonadReader PageCtx m)
   => TT.DataPageHeader
   -> Maybe [Value]
   -> C.ConduitT BS.ByteString [(Word32, Word32, Value)] m ()
-dataPageReaderS header mb_dict = do
+dataPageReader header mb_dict = do
   let num_values         = header ^. TT.pinchField @"num_values"
   let def_level_encoding = header ^. TT.pinchField @"definition_level_encoding"
   let rep_level_encoding = header ^. TT.pinchField @"repetition_level_encoding"
   let encoding           = header ^. TT.pinchField @"encoding"
   (max_rep_level, max_def_level) <- calcMaxEncodingLevels
-  (rep_consumed , fill_level_default num_values -> rep_data) <-
+  (_rep_consumed, fill_level_default num_values -> rep_data) <-
     readRepetitionLevel
       rep_level_encoding
       (maxLevelToBitWidth max_rep_level)
       num_values
-  (def_consumed, fill_level_default num_values -> def_data) <-
+  (_def_consumed, fill_level_default num_values -> def_data) <-
     readDefinitionLevel
       def_level_encoding
       (maxLevelToBitWidth max_def_level)
@@ -147,121 +143,6 @@ dataPageReaderS header mb_dict = do
           $ decodeRLEBPHybrid (BitWidth bit_width) num_values
         vals <- construct_dict_values max_def_level dict level_data val_indexes
         C.yield vals
-      (Nothing, TT.PLAIN_DICTIONARY _) ->
-        throwError
-          "Data page has PLAIN_DICTIONARY encoding but we don't have a dictionary yet."
-      other ->
-        throwError
-          $  "Don't know how to encode data pages with encoding: "
-          <> T.pack (show other)
-
-  -- | Given repetition and definition level data, a dictionary and a set of indexes,
-  -- constructs values for this dictionary-encoded page.
-  construct_dict_values
-    :: forall m0 rep def
-     . (MonadError T.Text m0, Eq def)
-    => def
-    -> [Value]
-    -> [(rep, def)]
-    -> [Word32]
-    -> m0 [(rep, def, Value)]
-  construct_dict_values _ _ [] _ = pure []
-  construct_dict_values _ _ _ [] =
-    throwError
-      "There are not enough level data for given amount of dictionary indexes."
-  construct_dict_values max_def_level dict ((r, d) : lx) (v : vx)
-    | d == max_def_level = do
-      val <- find_from_dict dict v
-      ((r, d, val) :) <$> construct_dict_values max_def_level dict lx vx
-    | otherwise = do
-      ((r, d, Null) :) <$> construct_dict_values max_def_level dict lx (v : vx)
-
-dataPageReader
-  :: forall m
-   . (PR m, MonadReader PageCtx m)
-  => TT.DataPageHeader
-  -> Maybe [Value]
-  -> C.ConduitT
-       BS.ByteString
-       BS.ByteString
-       m
-       (Int64, [(Word32, Word32, Value)])
-dataPageReader header mb_dict = do
-  let num_values         = header ^. TT.pinchField @"num_values"
-  let def_level_encoding = header ^. TT.pinchField @"definition_level_encoding"
-  let rep_level_encoding = header ^. TT.pinchField @"repetition_level_encoding"
-  let encoding           = header ^. TT.pinchField @"encoding"
-  (max_rep_level, max_def_level) <- calcMaxEncodingLevels
-  (rep_consumed , fill_level_default num_values -> rep_data) <-
-    readRepetitionLevel
-      rep_level_encoding
-      (maxLevelToBitWidth max_rep_level)
-      num_values
-  (def_consumed, fill_level_default num_values -> def_data) <-
-    readDefinitionLevel
-      def_level_encoding
-      (maxLevelToBitWidth max_def_level)
-      num_values
-  level_data               <- zip_level_data rep_data def_data
-  (content_consumed, vals) <- read_page_content
-    encoding
-    level_data
-    num_values
-    (fromIntegral max_def_level)
-  pure (rep_consumed + def_consumed + content_consumed, vals)
- where
-  find_from_dict
-    :: forall  m0 . MonadError T.Text m0 => [Value] -> Word32 -> m0 Value
-  find_from_dict dict (fromIntegral -> index) = case dict ^? ix index of
-    Nothing ->
-      throwError $ "A dictionary value couldn't be found in index " <> T.pack
-        (show index)
-    Just val -> pure val
-
-  zip_level_data
-    :: forall  m0 a b . MonadError T.Text m0 => [a] -> [b] -> m0 [(a, b)]
-  zip_level_data rep_data def_data =
-    zipExactMay rep_data def_data
-      <??> (  "Repetition and Definition data sizes differ: page has "
-           <> T.pack (show (length rep_data))
-           <> " repetition values and "
-           <> T.pack (show (length def_data))
-           <> " definition values."
-           )
-
-  fill_level_default :: Int32 -> [Word32] -> [Word32]
-  fill_level_default num_values = \case
-    [] -> replicate (fromIntegral num_values) 1
-    xs -> xs
-
-  read_page_content
-    :: TT.Encoding
-    -> [(a, Word32)]
-    -> Int32
-    -> Word32
-    -> C.ConduitT
-         BS.ByteString
-         BS.ByteString
-         m
-         (Int64, [(a, Word32, Value)])
-  read_page_content encoding level_data num_values max_def_level =
-    case (mb_dict, encoding) of
-      (Nothing, TT.PLAIN _) -> do
-        (val_consumed, vals) <- forSized level_data $ \(r, d) -> if
-          | d == max_def_level -> fmap (r, d, ) <$> decodeValue
-          | otherwise          -> pure (0, (r, d, Null))
-
-        pure (val_consumed, vals)
-      (Just _, TT.PLAIN _) -> throwError
-        "We shouldn't have PLAIN-encoded data pages with a dictionary."
-      (Just dict, TT.PLAIN_DICTIONARY _) -> do
-        !bit_width                  <- CB.sinkGet BG.getWord8
-        (val_consumed, val_indexes) <- CB.sinkGet $ sizedGet $ decodeRLEBPHybrid
-          (BitWidth bit_width)
-          num_values
-        -- We add 1 for getWord8 above.
-        vals <- construct_dict_values max_def_level dict level_data val_indexes
-        pure (val_consumed + 1, vals)
       (Nothing, TT.PLAIN_DICTIONARY _) ->
         throwError
           "Data page has PLAIN_DICTIONARY encoding but we don't have a dictionary yet."
@@ -419,27 +300,6 @@ getRepType e =
     <??> "Repetition type could not be found for elem "
     <>   T.pack (show e)
 
-readContent
-  :: PR m => TT.FileMetadata -> C.ConduitT BS.ByteString BS.ByteString m ()
-readContent metadata = do
-  !_ <- CB.sinkGet BG.getWord32le
-  let schema = metadata ^. TT.pinchField @"schema"
-  let
-    schema_mapping =
-      M.fromList $ map (TT.unField . TT._SchemaElement_name &&& id) schema
-  let row_groups = metadata ^. TT.pinchField @"row_groups"
-  traverse_ (readRowGroup schema_mapping) row_groups
-
-readRowGroup
-  :: PR m
-  => M.Map T.Text TT.SchemaElement
-  -> TT.RowGroup
-  -> C.ConduitT BS.ByteString BS.ByteString m ()
-readRowGroup schema row_group = do
-  pLogS "Reading a row group"
-  let column_chunks = row_group ^. TT.pinchField @"column_chunks"
-  traverse_ (readColumnChunk schema) column_chunks
-
 validateCompression :: MonadError T.Text m => TT.ColumnMetaData -> m ()
 validateCompression metadata =
   let compression = metadata ^. TT.pinchField @"codec"
@@ -453,35 +313,8 @@ readColumnChunk
   :: PR m
   => M.Map T.Text TT.SchemaElement
   -> TT.ColumnChunk
-  -> C.ConduitT BS.ByteString BS.ByteString m ()
-readColumnChunk schema cc = do
-  pLogS "Reading a column chunk"
-  let mb_metadata = cc ^. TT.pinchField @"meta_data"
-  metadata <- mb_metadata <??> "Metadata could not be found"
-  validateCompression metadata
-  let size      = metadata ^. TT.pinchField @"total_compressed_size"
-  let column_ty = metadata ^. TT.pinchField @"type"
-  let path      = metadata ^. TT.pinchField @"path_in_schema"
-  ne_path <- NE.nonEmpty path <??> "Schema path cannot be empty"
-  let page_ctx = PageCtx schema ne_path column_ty
-
-  -- | TODO:
-  -- C++ client implementation does the following:
-  -- It starts by allowing 16KiB of size and doubles it everytime parsing fails.
-  -- It allows page sizes up to 16MiB.
-  --
-  -- We can also do that in this library. For now, let's stick with the lazy solution.
-  page_content <- C.runReaderC page_ctx $ readPage size Nothing
-  -- pLogS "Page content:"
-  -- pLog page_content
-  pure ()
-
-readColumnChunkS
-  :: PR m
-  => M.Map T.Text TT.SchemaElement
-  -> TT.ColumnChunk
   -> C.ConduitT BS.ByteString [(Word32, Word32, Value)] m ()
-readColumnChunkS schema cc = do
+readColumnChunk schema cc = do
   let mb_metadata = cc ^. TT.pinchField @"meta_data"
   metadata <- mb_metadata <??> "Metadata could not be found"
   -- validateCompression metadata
@@ -497,16 +330,16 @@ readColumnChunkS schema cc = do
   -- It allows page sizes up to 16MiB.
   --
   -- We can also do that in this library. For now, let's stick with the lazy solution.
-  C.runReaderC page_ctx $ readPageS size Nothing
+  C.runReaderC page_ctx $ readPage size Nothing
 
 readPage
   :: (MonadReader PageCtx m, PR m)
   => Int64
   -> Maybe [Value]
-  -> C.ConduitT BS.ByteString BS.ByteString m [(Word32, Word32, Value)]
-readPage 0         _       = pure []
+  -> C.ConduitT BS.ByteString [(Word32, Word32, Value)] m ()
+readPage 0         _       = pure ()
 readPage remaining mb_dict = do
-  pLogS "Reading a page"
+  pLogS "Reading a page!!!"
   (page_header_size, page_header :: TT.PageHeader) <- decodeConduit remaining
   let
     page_content_size = page_header ^. TT.pinchField @"uncompressed_page_size"
@@ -528,56 +361,9 @@ readPage remaining mb_dict = do
       (Just _dict_page_header, Nothing, Just _dict) ->
         throwError "Found dictionary page while we already had a dictionary."
       (Nothing, Just dp_header, Nothing) -> do
-        (page_consumed, page_result) <- dataPageReader dp_header Nothing
-        validate_consumed_page_bytes page_consumed
-        rest_page_results <- readPage
-          (remaining - fromIntegral page_size)
-          Nothing
-        pure (rest_page_results ++ page_result)
+        dataPageReader dp_header Nothing
       (Nothing, Just dp_header, Just dict) -> do
-        (page_consumed, page_result) <- dataPageReader dp_header (Just dict)
-        validate_consumed_page_bytes page_consumed
-        rest_page_results <- readPage
-          (remaining - fromIntegral page_size)
-          Nothing
-        pure (rest_page_results ++ page_result)
-      (Nothing, Nothing, _) -> throwError
-        "Page doesn't have any of the dictionary or data page header."
-      (Just _, Just _, _) ->
-        throwError "Page has both dictionary and data page headers."
-
-readPageS
-  :: (MonadReader PageCtx m, PR m)
-  => Int64
-  -> Maybe [Value]
-  -> C.ConduitT BS.ByteString [(Word32, Word32, Value)] m ()
-readPageS 0         _       = pure ()
-readPageS remaining mb_dict = do
-  pLogS "Reading a page!!!"
-  (page_header_size, page_header :: TT.PageHeader) <- decodeConduit remaining
-  let
-    page_content_size = page_header ^. TT.pinchField @"uncompressed_page_size"
-  let
-    validate_consumed_page_bytes consumed =
-      unless (fromIntegral page_content_size == consumed)
-        $ throwError "Reader did not consume the whole page!"
-  let page_size = fromIntegral page_header_size + page_content_size
-  case
-      ( page_header ^. TT.pinchField @"dictionary_page_header"
-      , page_header ^. TT.pinchField @"data_page_header"
-      , mb_dict
-      )
-    of
-      (Just dict_page_header, Nothing, Nothing) -> do
-        (page_consumed, dict) <- dictPageReader dict_page_header
-        validate_consumed_page_bytes page_consumed
-        readPageS (remaining - fromIntegral page_size) (Just dict)
-      (Just _dict_page_header, Nothing, Just _dict) ->
-        throwError "Found dictionary page while we already had a dictionary."
-      (Nothing, Just dp_header, Nothing) -> do
-        dataPageReaderS dp_header Nothing
-      (Nothing, Just dp_header, Just dict) -> do
-        dataPageReaderS dp_header (Just dict)
+        dataPageReader dp_header (Just dict)
       (Nothing, Nothing, _) -> throwError
         "Page doesn't have any of the dictionary or data page header."
       (Just _, Just _, _) ->
@@ -625,23 +411,3 @@ decodeConduit (fromIntegral -> size) = do
     =<< CB.take size
   C.leftover left
   pure (size - BS.length left, val)
-
-decodeConduitS
-  :: forall a size m
-   . ( MonadError T.Text m
-     , C.MonadThrow m
-     , MonadIO m
-     , Integral size
-     , Pinch.Pinchable a
-     )
-  => size
-  -> C.ConduitT BS.ByteString (Int, a) m ()
-decodeConduitS (fromIntegral -> size) = do
-  !bs         <- CB.sinkGet (BG.getByteString size)
-  (left, val) <-
-    liftEither
-    . first T.pack
-    . Pinch.decodeWithLeftovers Pinch.compactProtocol
-    $ bs
-  C.leftover left
-  C.yield (size - BS.length left, val)
