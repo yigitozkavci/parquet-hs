@@ -94,13 +94,18 @@ dataPageReader header mb_dict = do
         (fromIntegral non_null_num_values)
         decodeValue
       pure (val_consumed, reverse vals)
+    (Just _, TT.PLAIN _) -> throwError
+      "We shouldn't have PLAIN-encoded data pages with a dictionary."
     (Just dict, TT.PLAIN_DICTIONARY _) -> do
       !bit_width                  <- C.sinkGet BG.getWord8
       (val_consumed, val_indexes) <-
         C.sinkGet $ sizedGet $ decodeRLEBPHybrid $ BitWidth bit_width
-    -- We add 1 for getWord8 above.
+      -- We add 1 for getWord8 above.
       vals <- for val_indexes (find_from_dict dict)
       pure (val_consumed + 1, vals)
+    (Nothing, TT.PLAIN_DICTIONARY _) ->
+      throwError
+        "Data page has PLAIN_DICTIONARY encoding but we don't have a dictionary yet."
     other ->
       throwError
         $  "Don't know how to encode data pages with encoding: "
@@ -127,7 +132,6 @@ decodeValue = asks _pcColumnTy >>= \case
     (consumed, result) <- replicateMSized
       (fromIntegral len)
       (C.sinkGet (sizedGet BG.getWord8))
-  -- We add 4 for getWord32le above.
     pure (consumed + 4, ValueByteString (BS.pack (reverse result)))
   (TT.INT64 _) -> do
     (consumed, result) <- C.sinkGet (sizedGet BG.getInt64le)
@@ -139,6 +143,7 @@ decodeValue = asks _pcColumnTy >>= \case
       <> T.pack (show ty)
       <> " yet."
 
+-- We add 4 for getWord32le above.
 indexPageReader
   :: TT.IndexPageHeader
   -> C.ConduitT BS.ByteString BS.ByteString m (Int64, [Value])

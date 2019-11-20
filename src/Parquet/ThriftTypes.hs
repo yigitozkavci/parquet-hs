@@ -11,15 +11,15 @@
 
 module Parquet.ThriftTypes where
 
-import           Data.ByteString
-import qualified Data.Generics.Product.Fields    as GL
+import Data.ByteString
+import qualified Data.Generics.Product.Fields as GL
 import qualified Data.Generics.Product.Positions as GL
-import           Data.Int
-import           Data.Text
-import           GHC.Generics
-import           GHC.TypeLits                    (AppendSymbol, Symbol)
-import           Lens.Micro
-import           Pinch
+import Data.Int
+import Data.Text
+import GHC.Generics
+import GHC.TypeLits (AppendSymbol, Symbol)
+import Lens.Micro
+import Pinch
 
 data StringType = StringType
   deriving (Show, Eq, Generic)
@@ -68,16 +68,17 @@ type family TypeName a :: Symbol where
   TypeName a = TypeName (Rep a ())
 
 pinchPos
-  :: forall pos s t a1 b1 a2 b2.
-     (GL.HasPosition 1 a1 b1 a2 b2, GL.HasPosition pos s t a1 b1)
+  :: forall pos s t a1 b1 a2 b2
+   . (GL.HasPosition 1 a1 b1 a2 b2, GL.HasPosition pos s t a1 b1)
   => Lens s t a2 b2
 pinchPos = GL.position @pos . GL.position @1
 
 pinchField
-  :: forall field s i r field_name.
-     ( field_name ~ ("_" `AppendSymbol` TypeName s `AppendSymbol` "_" `AppendSymbol` field)
+  :: forall field s i r field_name
+   . ( field_name ~ ("_" `AppendSymbol` TypeName s `AppendSymbol` "_" `AppendSymbol` field)
      , GL.HasPosition 1 i i r r
-     , GL.HasField field_name s s i i)
+     , GL.HasField field_name s s i i
+     )
   => Lens s s r r
 pinchField = GL.field @field_name . GL.position @1
 
