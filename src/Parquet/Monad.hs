@@ -10,3 +10,5 @@ import qualified Data.Text as T
 
 type PR m
   = (C.MonadResource m, MonadLogger m, C.MonadThrow m, MonadError T.Text m)
+
+type PRS m = (C.MonadResource m, C.MonadThrow m)
