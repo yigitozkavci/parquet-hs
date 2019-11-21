@@ -8,6 +8,14 @@ import System.Process
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
 import Control.Exception (bracket_)
+import qualified Data.Aeson as JSON
+import Text.Pretty.Simple (pPrint, pString)
+import qualified Data.Text.IO as TextIO (putStrLn)
+import qualified Data.ByteString.Lazy as LByteString (ByteString, toStrict)
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import qualified Data.Text.Lazy as LText (Text)
+import qualified Data.Text.Lazy.IO as LTextIO (putStrLn)
 
 import Parquet.Reader (readWholeParquetFile)
 
@@ -50,9 +58,25 @@ testParquetFormat inputFile performTest =
         callProcess "rm" ["-rf", testPath </> intermediateDir]
         -- callProcess "rm" ["-f", outParquetFilePath]
 
+lazyByteStringToText :: LByteString.ByteString -> T.Text
+lazyByteStringToText = T.decodeUtf8 . LByteString.toStrict
+
+lazyByteStringToString :: LByteString.ByteString -> String
+lazyByteStringToString = T.unpack . lazyByteStringToText
+
+putLazyByteStringLn :: LByteString.ByteString -> IO ()
+putLazyByteStringLn = TextIO.putStrLn . lazyByteStringToText
+
+putLazyTextLn :: LText.Text -> IO ()
+putLazyTextLn = LTextIO.putStrLn
+
 main :: IO ()
 main = hspec $ describe "Reader" $ do
   it "can read columns" $ do
     testParquetFormat "input1.json" $ \parqFile -> do
-      _ <- readWholeParquetFile parqFile
+      putLazyTextLn
+        .   pString
+        .   lazyByteStringToString
+        .   JSON.encode
+        =<< readWholeParquetFile parqFile
       pure ()

@@ -49,6 +49,13 @@ pLog = logInfoN . TL.toStrict . pShow
 pLogS :: (MonadLogger m) => T.Text -> m ()
 pLogS = pLog
 
+data ColumnValue = ColumnValue
+  { repetitionLevel :: Word32
+  , definitionLevel :: Word32
+  , maxDefinitionLevel :: Word32
+  , value :: Value
+  } deriving (Eq, Show)
+
 -- | TODO: This is so unoptimized that my eyes bleed.
 replicateMSized :: (Monad m) => Int -> m (Int64, result) -> m (Int64, [result])
 replicateMSized 0 _    = pure (0, [])
@@ -78,7 +85,7 @@ dataPageReader
    . (PR m, MonadReader PageCtx m)
   => TT.DataPageHeader
   -> Maybe [Value]
-  -> C.ConduitT BS.ByteString (Word32, Word32, Value) m ()
+  -> C.ConduitT BS.ByteString ColumnValue m ()
 dataPageReader header mb_dict = do
   let num_values         = header ^. TT.pinchField @"num_values"
   let def_level_encoding = header ^. TT.pinchField @"definition_level_encoding"
@@ -125,16 +132,18 @@ dataPageReader header mb_dict = do
 
   read_page_content
     :: TT.Encoding
-    -> [(a, Word32)]
+    -> [(Word32, Word32)]
     -> Int32
     -> Word32
-    -> C.ConduitT BS.ByteString (a, Word32, Value) m ()
+    -> C.ConduitT BS.ByteString ColumnValue m ()
   read_page_content encoding level_data num_values max_def_level =
     case (mb_dict, encoding) of
       (Nothing, TT.PLAIN _) -> do
-        (_val_consumed, vals) <- forSized level_data $ \(r, d) -> if
-          | d == max_def_level -> fmap (r, d, ) <$> decodeValue
-          | otherwise          -> pure (0, (r, d, Null))
+        vals <- for level_data $ \(r, d) -> if
+          | d == max_def_level -> do
+            (_, val) <- decodeValue
+            pure (ColumnValue r d max_def_level val)
+          | otherwise -> pure $ ColumnValue r d max_def_level Null
         C.yieldMany vals
       (Just _, TT.PLAIN _) -> throwError
         "We shouldn't have PLAIN-encoded data pages with a dictionary."
@@ -155,13 +164,13 @@ dataPageReader header mb_dict = do
   -- | Given repetition and definition level data, a dictionary and a set of indexes,
   -- constructs values for this dictionary-encoded page.
   construct_dict_values
-    :: forall m0 rep def
-     . (MonadError T.Text m0, Eq def)
-    => def
+    :: forall m0
+     . (MonadError T.Text m0)
+    => Word32
     -> [Value]
-    -> [(rep, def)]
+    -> [(Word32, Word32)]
     -> [Word32]
-    -> m0 [(rep, def, Value)]
+    -> m0 [ColumnValue]
   construct_dict_values _ _ [] _ = pure []
   construct_dict_values _ _ _ [] =
     throwError
@@ -169,9 +178,11 @@ dataPageReader header mb_dict = do
   construct_dict_values max_def_level dict ((r, d) : lx) (v : vx)
     | d == max_def_level = do
       val <- find_from_dict dict v
-      ((r, d, val) :) <$> construct_dict_values max_def_level dict lx vx
+      (ColumnValue r d max_def_level val :)
+        <$> construct_dict_values max_def_level dict lx vx
     | otherwise = do
-      ((r, d, Null) :) <$> construct_dict_values max_def_level dict lx (v : vx)
+      (ColumnValue r d max_def_level Null :)
+        <$> construct_dict_values max_def_level dict lx (v : vx)
 
 data Value
   = ValueInt64 Int64
@@ -314,7 +325,7 @@ readColumnChunk
   :: PR m
   => M.Map T.Text TT.SchemaElement
   -> TT.ColumnChunk
-  -> C.ConduitT BS.ByteString (Word32, Word32, Value) m ()
+  -> C.ConduitT BS.ByteString ColumnValue m ()
 readColumnChunk schema cc = do
   let mb_metadata = cc ^. TT.pinchField @"meta_data"
   metadata <- mb_metadata <??> "Metadata could not be found"
@@ -337,7 +348,7 @@ readPage
   :: (MonadReader PageCtx m, PR m)
   => Int64
   -> Maybe [Value]
-  -> C.ConduitT BS.ByteString (Word32, Word32, Value) m ()
+  -> C.ConduitT BS.ByteString ColumnValue m ()
 readPage 0         _       = pure ()
 readPage remaining mb_dict = do
   pLogS "Reading a page!!!"
