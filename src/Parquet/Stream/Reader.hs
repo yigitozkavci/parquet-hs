@@ -13,6 +13,7 @@
 
 module Parquet.Stream.Reader where
 
+import qualified System.IO as IO
 import qualified Conduit as C
 import Control.Applicative (liftA3)
 import Control.Monad.Except
@@ -77,7 +78,7 @@ dataPageReader
    . (PR m, MonadReader PageCtx m)
   => TT.DataPageHeader
   -> Maybe [Value]
-  -> C.ConduitT BS.ByteString [(Word32, Word32, Value)] m ()
+  -> C.ConduitT BS.ByteString (Word32, Word32, Value) m ()
 dataPageReader header mb_dict = do
   let num_values         = header ^. TT.pinchField @"num_values"
   let def_level_encoding = header ^. TT.pinchField @"definition_level_encoding"
@@ -127,14 +128,14 @@ dataPageReader header mb_dict = do
     -> [(a, Word32)]
     -> Int32
     -> Word32
-    -> C.ConduitT BS.ByteString [(a, Word32, Value)] m ()
+    -> C.ConduitT BS.ByteString (a, Word32, Value) m ()
   read_page_content encoding level_data num_values max_def_level =
     case (mb_dict, encoding) of
       (Nothing, TT.PLAIN _) -> do
         (_val_consumed, vals) <- forSized level_data $ \(r, d) -> if
           | d == max_def_level -> fmap (r, d, ) <$> decodeValue
           | otherwise          -> pure (0, (r, d, Null))
-        C.yield vals
+        C.yieldMany vals
       (Just _, TT.PLAIN _) -> throwError
         "We shouldn't have PLAIN-encoded data pages with a dictionary."
       (Just dict, TT.PLAIN_DICTIONARY _) -> do
@@ -142,7 +143,7 @@ dataPageReader header mb_dict = do
         val_indexes <- CB.sinkGet
           $ decodeRLEBPHybrid (BitWidth bit_width) num_values
         vals <- construct_dict_values max_def_level dict level_data val_indexes
-        C.yield vals
+        C.yieldMany vals
       (Nothing, TT.PLAIN_DICTIONARY _) ->
         throwError
           "Data page has PLAIN_DICTIONARY encoding but we don't have a dictionary yet."
@@ -313,7 +314,7 @@ readColumnChunk
   :: PR m
   => M.Map T.Text TT.SchemaElement
   -> TT.ColumnChunk
-  -> C.ConduitT BS.ByteString [(Word32, Word32, Value)] m ()
+  -> C.ConduitT BS.ByteString (Word32, Word32, Value) m ()
 readColumnChunk schema cc = do
   let mb_metadata = cc ^. TT.pinchField @"meta_data"
   metadata <- mb_metadata <??> "Metadata could not be found"
@@ -336,7 +337,7 @@ readPage
   :: (MonadReader PageCtx m, PR m)
   => Int64
   -> Maybe [Value]
-  -> C.ConduitT BS.ByteString [(Word32, Word32, Value)] m ()
+  -> C.ConduitT BS.ByteString (Word32, Word32, Value) m ()
 readPage 0         _       = pure ()
 readPage remaining mb_dict = do
   pLogS "Reading a page!!!"
@@ -374,20 +375,21 @@ failOnError v = v >>= \case
   Left  err -> fail $ show err
   Right val -> pure val
 
-readMetadata :: Handle -> IO (Either T.Text TT.FileMetadata)
-readMetadata h = do
-  liftIO $ hSeek h SeekFromEnd (-8)
-  !metadataSize <- liftIO $ run_handle_get BG.getWord32le
-  liftIO $ hSeek h SeekFromEnd (-(8 + fromIntegral metadataSize))
-  fmap (fmap (snd . fst))
-    $            runExceptT
-    $            C.runConduit
-    $            C.sourceHandle h
-    C..|         decodeConduit metadataSize
-    `C.fuseBoth` pure ()
+readMetadata :: FilePath -> IO (Either T.Text TT.FileMetadata)
+readMetadata fp = do
+  IO.withFile fp IO.ReadMode $ \h -> do
+    liftIO $ hSeek h SeekFromEnd (-8)
+    !metadataSize <- liftIO $ run_handle_get h BG.getWord32le
+    liftIO $ hSeek h SeekFromEnd (-(8 + fromIntegral metadataSize))
+    fmap (fmap (snd . fst))
+      $            runExceptT
+      $            C.runConduit
+      $            C.sourceHandle h
+      C..|         decodeConduit metadataSize
+      `C.fuseBoth` pure ()
  where
-  run_handle_get :: BG.Get a -> IO a
-  run_handle_get get = do
+  run_handle_get :: Handle -> BG.Get a -> IO a
+  run_handle_get h get = do
     pos    <- hTell h
     !bytes <- LBS.hGetContents h
     case BG.runGetOrFail get bytes of

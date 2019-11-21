@@ -43,13 +43,23 @@ library:
   - safe
 
 tests:
-  parquet-hs-test:
+  parquet-hs-unit:
     main: Spec.hs
-    type: exitcode-stdio-1.0
-    source-dirs: tests
+    source-dirs: tests/unit
     dependencies:
     - parquet-hs
     - hspec
     - QuickCheck
     - bytestring
     - binary
+  parquet-hs-integration:
+    main: Spec.hs
+    source-dirs: tests/integration
+    dependencies:
+    - parquet-hs
+    - hspec
+    - QuickCheck
+    - bytestring
+    - binary
+    - filepath
+    - process
