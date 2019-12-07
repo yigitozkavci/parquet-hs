@@ -7,11 +7,8 @@ import Data.Binary.Get
 import Data.Binary.Put
 import Data.Bits
 import qualified Data.ByteString as BS
-import qualified Data.Text.Lazy as T
 import Data.Word (Word32, Word8)
 import Data.Int (Int32)
-import Debug.Trace
-import Text.Pretty.Simple
 
 cLeb128ByteLimit :: Int
 cLeb128ByteLimit = 32
@@ -35,12 +32,6 @@ takeBytesBe = go
 
 newtype BitWidth = BitWidth Word8
   deriving (Show, Eq, Ord)
-
-t :: Show a => a -> a
-t a = trace (T.unpack $ "\n" <> pShow a) a
-
-tm :: (Monad m, Show a) => a -> m ()
-tm a = trace (T.unpack $ "\n" <> pShow a) (pure ())
 
 decodeBPBE :: BitWidth -> Get [Word32]
 decodeBPBE (BitWidth bit_width) = do

@@ -30,7 +30,6 @@ library:
   - text
   - bytestring
   - binary
-  - pretty-simple
   - error-util
   - mtl
   - containers
@@ -43,6 +42,7 @@ library:
   - safe
   - aeson
   - unordered-containers
+  - lifted-async
 
 tests:
   parquet-hs-unit:
@@ -66,5 +66,4 @@ tests:
     - filepath
     - process
     - aeson
-    - pretty-simple
     - text

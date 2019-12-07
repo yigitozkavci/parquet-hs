@@ -29,25 +29,17 @@ import Data.Int (Int32, Int64)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import qualified Data.Text as T
-import qualified Data.Text.Lazy as TL
 import Data.Traversable (for)
 import Data.Word (Word32, Word8)
 import Lens.Micro
 import qualified Pinch
 import System.IO
-import Text.Pretty.Simple (pShow)
 import Safe.Exact (zipExactMay)
 
 import Parquet.Decoder (BitWidth(..), decodeBPBE, decodeRLEBPHybrid)
 import Parquet.Monad
 import qualified Parquet.ThriftTypes as TT
 import Parquet.Utils ((<??>))
-
-pLog :: forall  a m . (MonadLogger m, Show a) => a -> m ()
-pLog = logInfoN . TL.toStrict . pShow
-
-pLogS :: (MonadLogger m) => T.Text -> m ()
-pLogS = pLog
 
 data ColumnValue = ColumnValue
   { repetitionLevel :: Word32
@@ -351,7 +343,6 @@ readPage
   -> C.ConduitT BS.ByteString ColumnValue m ()
 readPage 0         _       = pure ()
 readPage remaining mb_dict = do
-  pLogS "Reading a page!!!"
   (page_header_size, page_header :: TT.PageHeader) <- decodeConduit remaining
   let
     page_content_size = page_header ^. TT.pinchField @"uncompressed_page_size"

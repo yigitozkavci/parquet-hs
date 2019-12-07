@@ -14,14 +14,13 @@ import Parquet.Stream.Reader
   (readMetadata, Value(..), readColumnChunk, ColumnValue(..))
 import qualified System.IO as IO
 import Lens.Micro
-import Data.Word (Word32)
 import qualified Data.Map as M
 import Control.Arrow ((&&&))
-import Text.Pretty.Simple (pPrint)
 import qualified Data.Aeson as JSON
 import qualified Data.Text as T
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text.Encoding as T
+-- import qualified Control.Concurrent.Async.Lifted as LA
 
 import qualified Parquet.ThriftTypes as TT
 import Parquet.Utils (failOnExcept)
@@ -41,6 +40,15 @@ readWholeParquetFile inputFp = do
 
 type Cell = (ColumnValue, [T.Text])
 type Record = [Cell]
+
+sourceParquet :: FilePath -> C.ConduitT () JSON.Value (C.ResourceT IO) ()
+sourceParquet fp = C.liftIO (readMetadata fp) >>= \case
+  Left  err      -> fail $ "Could not read metadata: " <> show err
+  Right metadata -> do
+    traverse_
+      (sourceRowGroup fp metadata)
+      (metadata ^. TT.pinchField @"row_groups")
+
 
 -- | Streams the values for every column chunk and zips them into records.
 --
@@ -63,7 +71,7 @@ sourceRowGroup
   -> TT.FileMetadata
   -> TT.RowGroup
   -> C.ConduitT () JSON.Value (C.ResourceT IO) ()
-sourceRowGroup fp metadata rg = do
+sourceRowGroup fp metadata rg =
   C.sequenceSources
       (map
         (\cc -> sourceColumnChunk fp metadata cc
@@ -75,28 +83,23 @@ sourceRowGroup fp metadata rg = do
  where
   mb_path :: TT.ColumnChunk -> Maybe [T.Text]
   mb_path cc =
-    (   TT.unField
-    .   TT._ColumnMetaData_path_in_schema
-    <$> (cc ^. TT.pinchField @"meta_data")
-    )
+    TT.unField
+      .   TT._ColumnMetaData_path_in_schema
+      <$> (cc ^. TT.pinchField @"meta_data")
 
   parse_record :: Record -> Maybe JSON.Value
   parse_record [] = Just (JSON.Object (HM.fromList []))
-  parse_record ((ColumnValue r 0 md v, px) : _) = do
-    value_to_json_value v
-  parse_record ((ColumnValue r d md v, []) : _) = do
-    Nothing -- Should never happen
-  parse_record ((ColumnValue r d md v, (path : px)) : xs) = do
+  parse_record ((ColumnValue _ 0 _ v, _) : _) = value_to_json_value v
+  parse_record ((ColumnValue{}, []) : _) = Nothing -- Should never happen. TODO(yigitozkavci): Then make this unrepresentable.
+  parse_record ((ColumnValue r d md v, path : px) : xs) = do
     obj            <- parse_column (ColumnValue r (d - 1) md v, px)
     JSON.Object hm <- parse_record xs -- TODO: Partial!
     pure $ JSON.Object $ HM.fromList [(path, obj)] <> hm
 
   parse_column :: (ColumnValue, [T.Text]) -> Maybe JSON.Value
-  parse_column (ColumnValue r 0 md v, px) = do
-    value_to_json_value v
-  parse_column (ColumnValue r d md v, []) = do
-    Nothing -- Should never happen
-  parse_column (ColumnValue r d md v, (path : px)) = do
+  parse_column (ColumnValue _ 0 _ v , _        ) = value_to_json_value v
+  parse_column (ColumnValue{}       , []       ) = Nothing -- Should never happen
+  parse_column (ColumnValue r d md v, path : px) = do
     obj <- parse_column (ColumnValue r (d - 1) md v, px)
     pure $ JSON.Object $ HM.fromList [(path, obj)]
 
@@ -105,7 +108,7 @@ sourceRowGroup fp metadata rg = do
   value_to_json_value Null                 = Just JSON.Null
   value_to_json_value (ValueInt64      v ) = Just $ JSON.Number $ fromIntegral v
   value_to_json_value (ValueByteString bs) = case T.decodeUtf8' bs of
-    Left  e -> Nothing
+    Left  _ -> Nothing
     Right t -> Just (JSON.String t)
 
 sourceColumnChunk
