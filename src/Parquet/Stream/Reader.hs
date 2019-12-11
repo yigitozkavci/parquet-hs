@@ -327,13 +327,6 @@ readColumnChunk schema cc = do
   let path      = metadata ^. TT.pinchField @"path_in_schema"
   ne_path <- NE.nonEmpty path <??> "Schema path cannot be empty"
   let page_ctx = PageCtx schema ne_path column_ty
-
-  -- | TODO:
-  -- C++ client implementation does the following:
-  -- It starts by allowing 16KiB of size and doubles it everytime parsing fails.
-  -- It allows page sizes up to 16MiB.
-  --
-  -- We can also do that in this library. For now, let's stick with the lazy solution.
   C.runReaderC page_ctx $ readPage size Nothing
 
 readPage
@@ -376,30 +369,6 @@ failOnError :: Show err => IO (Either err b) -> IO b
 failOnError v = v >>= \case
   Left  err -> fail $ show err
   Right val -> pure val
-
-readMetadata :: FilePath -> IO (Either T.Text TT.FileMetadata)
-readMetadata fp = do
-  IO.withFile fp IO.ReadMode $ \h -> do
-    liftIO $ hSeek h SeekFromEnd (-8)
-    !metadataSize <- liftIO $ run_handle_get h BG.getWord32le
-    liftIO $ hSeek h SeekFromEnd (-(8 + fromIntegral metadataSize))
-    fmap (fmap (snd . fst))
-      $            runExceptT
-      $            C.runConduit
-      $            C.sourceHandle h
-      C..|         decodeConduit metadataSize
-      `C.fuseBoth` pure ()
- where
-  run_handle_get :: Handle -> BG.Get a -> IO a
-  run_handle_get h get = do
-    pos    <- hTell h
-    !bytes <- LBS.hGetContents h
-    case BG.runGetOrFail get bytes of
-      Left too_much_info ->
-        fail $ "Partial runGetOrFail failed: " <> show too_much_info
-      Right (_, consumed, res) -> do
-        hSeek h AbsoluteSeek $ fromIntegral (fromIntegral pos + consumed)
-        pure res
 
 decodeConduit
   :: forall a size m o

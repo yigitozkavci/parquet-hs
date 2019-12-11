@@ -70,9 +70,10 @@ putLazyTextLn :: LText.Text -> IO ()
 putLazyTextLn = LTextIO.putStrLn
 
 main :: IO ()
-main = hspec $ describe "Reader" $ do
-  it "can read columns" $ do
-    pure ()
+main = pure ()
+  -- hspec $ describe "Reader" $ do
+  --   it "can read columns" $ do
+  --     pure ()
     -- testParquetFormat "input1.json" $ \parqFile -> do
     --   putLazyTextLn
     --     .   pString

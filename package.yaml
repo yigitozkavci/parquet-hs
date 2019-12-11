@@ -43,6 +43,10 @@ library:
   - aeson
   - unordered-containers
   - lifted-async
+  - serialise
+  - http-conduit
+  - http-client
+  - http-types
 
 tests:
   parquet-hs-unit:
