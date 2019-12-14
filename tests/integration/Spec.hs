@@ -15,7 +15,11 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as LText (Text)
 import qualified Data.Text.Lazy.IO as LTextIO (putStrLn)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Except (runExceptT)
+import Conduit (runResourceT)
 
+import Control.Monad.Logger
 import Parquet.Reader (readWholeParquetFile)
 
 testPath :: String
@@ -70,14 +74,9 @@ putLazyTextLn :: LText.Text -> IO ()
 putLazyTextLn = LTextIO.putStrLn
 
 main :: IO ()
-main = pure ()
-  -- hspec $ describe "Reader" $ do
-  --   it "can read columns" $ do
-  --     pure ()
-    -- testParquetFormat "input1.json" $ \parqFile -> do
-    --   putLazyTextLn
-    --     .   pString
-    --     .   lazyByteStringToString
-    --     .   JSON.encode
-    --     =<< readWholeParquetFile parqFile
-    --   pure ()
+main = hspec $ describe "Reader" $ do
+  it "can read columns" $ do
+    testParquetFormat "input1.json" $ \parqFile -> do
+      liftIO . print =<< runResourceT
+        (runStdoutLoggingT (runExceptT (readWholeParquetFile parqFile)))
+      pure ()

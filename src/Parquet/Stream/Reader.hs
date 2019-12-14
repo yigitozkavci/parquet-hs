@@ -13,7 +13,6 @@
 
 module Parquet.Stream.Reader where
 
-import qualified System.IO as IO
 import qualified Conduit as C
 import Control.Applicative (liftA3)
 import Control.Monad.Except
@@ -31,9 +30,8 @@ import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Traversable (for)
 import Data.Word (Word32, Word8)
-import Lens.Micro
+import Control.Lens
 import qualified Pinch
-import System.IO
 import Safe.Exact (zipExactMay)
 
 import Parquet.Decoder (BitWidth(..), decodeBPBE, decodeRLEBPHybrid)
@@ -42,10 +40,10 @@ import qualified Parquet.ThriftTypes as TT
 import Parquet.Utils ((<??>))
 
 data ColumnValue = ColumnValue
-  { repetitionLevel :: Word32
-  , definitionLevel :: Word32
-  , maxDefinitionLevel :: Word32
-  , value :: Value
+  { _cvRepetitionLevel :: Word32
+  , _cvDefinitionLevel :: Word32
+  , _cvMaxDefinitionLevel :: Word32
+  , _cvValue :: Value
   } deriving (Eq, Show)
 
 -- | TODO: This is so unoptimized that my eyes bleed.
@@ -100,10 +98,10 @@ dataPageReader header mb_dict = do
  where
   find_from_dict
     :: forall  m0 . MonadError T.Text m0 => [Value] -> Word32 -> m0 Value
-  find_from_dict dict (fromIntegral -> index) = case dict ^? ix index of
+  find_from_dict dict (fromIntegral -> d_index) = case dict ^? ix d_index of
     Nothing ->
       throwError $ "A dictionary value couldn't be found in index " <> T.pack
-        (show index)
+        (show d_index)
     Just val -> pure val
 
   zip_level_data

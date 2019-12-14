@@ -1,10 +1,9 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -13,16 +12,18 @@ module Parquet.Reader where
 import Data.Foldable (traverse_)
 import qualified Data.Conduit.List as CL
 import qualified Data.Conduit.Binary as CB
-import Control.Monad.Logger
+import Control.Monad.Logger (MonadLogger, runNoLoggingT)
+import Control.Monad.Logger.CallStack (logWarn)
+import Data.Functor ((<$))
 import Parquet.Stream.Reader
   (Value(..), readColumnChunk, ColumnValue(..), decodeConduit)
-import Lens.Micro
+import Control.Lens
 import qualified Data.Map as M
 import Control.Arrow ((&&&))
 import qualified Data.Text as T
 import qualified Data.HashMap.Strict as HM
-import Data.Int (Int64)
 import Control.Monad.Except
+import qualified Data.List.NonEmpty as NE
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
@@ -35,10 +36,8 @@ import Network.HTTP.Simple
 import Network.HTTP.Client (Request(requestHeaders))
 import qualified Parquet.ThriftTypes as TT
 import Parquet.Utils (failOnExcept)
-import GHC.Generics (Generic)
-import Data.Binary (Binary(..))
-import Codec.Serialise (Serialise)
 import qualified Data.Binary.Get as BG
+import Parquet.ParquetObject
 
 newtype ParquetSource m = ParquetSource (Integer -> C.ConduitT () BS.ByteString m ())
 
@@ -48,10 +47,8 @@ readMetadata
   :: (MonadError T.Text m, MonadIO m) => ParquetSource m -> m TT.FileMetadata
 readMetadata (ParquetSource source) = do
   bs <- C.runConduit (source (-8) C..| CB.take 8)
-  liftIO $ print bs
-  liftIO $ putStrLn ""
-  case BG.runGetOrFail (BG.getWord32le) bs of
-    Left err -> fail "Could not fetch metadata size."
+  case BG.runGetOrFail BG.getWord32le bs of
+    Left err -> fail $ "Could not fetch metadata size: " <> show err
     Right (_, _, metadataSize) ->
       fmap (snd . fst)
         $            C.runConduit
@@ -88,25 +85,15 @@ remoteParquetFile url = ParquetSource $ \pos -> do
           $  "Non-success response code from remoteParquetFile call: "
           ++ show status
 
-  -- seekStream :: Int -> C.ConduitT BS.ByteString BS.ByteString m ()
-  -- seekStream pos
-  --   | pos > 0
-  --   = C.drop (fromIntegral pos)
-  --   | otherwise
-  --   = C.slidingWindowC (-pos)
-  --     C..| (C.lastC >>= \case
-  --            Nothing ->
-  --              fail
-  --                $  "Given negative position "
-  --                <> show pos
-  --                <> " is larger than stream size."
-  --            Just l -> C.yieldMany l
-  --          )
-
 readWholeParquetFile
-  :: (C.MonadThrow m, MonadIO m, MonadError T.Text m, C.MonadResource m)
+  :: ( C.MonadThrow m
+     , MonadIO m
+     , MonadError T.Text m
+     , C.MonadResource m
+     , MonadLogger m
+     )
   => String
-  -> m [ParquetValue]
+  -> m [ParquetObject]
 readWholeParquetFile inputFp = do
   metadata <- readMetadata (localParquetFile inputFp)
   C.runConduit
@@ -115,43 +102,21 @@ readWholeParquetFile inputFp = do
            (metadata ^. TT.pinchField @"row_groups")
     C..| CL.consume
 
-type Cell = (ColumnValue, [T.Text])
-type Record = [Cell]
+type Record = [(ColumnValue, [T.Text])]
 
-sourceParquet :: FilePath -> C.ConduitT () ParquetValue (C.ResourceT IO) ()
+sourceParquet :: FilePath -> C.ConduitT () ParquetObject (C.ResourceT IO) ()
 sourceParquet fp = runExceptT (readMetadata (localParquetFile fp)) >>= \case
   Left  err      -> fail $ "Could not read metadata: " <> show err
-  Right metadata -> do
-    traverse_
-      (sourceRowGroup (localParquetFile fp) metadata)
-      (metadata ^. TT.pinchField @"row_groups")
-
-newtype ParquetObject = MkParquetObject (HM.HashMap T.Text ParquetValue)
-  deriving (Eq, Show, Generic, Serialise)
-
-instance Semigroup ParquetObject where
-  MkParquetObject hm1 <> MkParquetObject hm2 = MkParquetObject (hm1 <> hm2)
-
-instance Monoid ParquetObject where
-  mempty = MkParquetObject mempty
-
-instance Binary ParquetObject where
-  put (MkParquetObject hm) = put (HM.toList hm)
-  get = MkParquetObject . HM.fromList <$> get
-
-data ParquetValue =
-    ParquetObject !ParquetObject
-  | ParquetInt !Int64
-  | ParquetString !BS.ByteString
-  | ParquetNull
-  deriving (Eq, Show, Generic, Binary, Serialise)
+  Right metadata -> C.transPipe runNoLoggingT $ traverse_
+    (sourceRowGroup (localParquetFile fp) metadata)
+    (metadata ^. TT.pinchField @"row_groups")
 
 sourceRowGroupFromRemoteFile
-  :: (C.MonadResource m, C.MonadIO m, C.MonadThrow m)
+  :: (C.MonadResource m, C.MonadIO m, C.MonadThrow m, MonadLogger m)
   => String
   -> TT.FileMetadata
   -> TT.RowGroup
-  -> C.ConduitT () ParquetValue m ()
+  -> C.ConduitT () ParquetObject m ()
 sourceRowGroupFromRemoteFile url metadata rg =
   sourceRowGroup (remoteParquetFile url) metadata rg
 
@@ -172,11 +137,12 @@ sourceRowGroupFromRemoteFile url metadata rg =
 -- (2, b, y)
 -- (3, c, z)
 sourceRowGroup
-  :: (C.MonadResource m, C.MonadIO m, C.MonadThrow m)
+  :: forall m
+   . (C.MonadResource m, C.MonadIO m, C.MonadThrow m, MonadLogger m)
   => ParquetSource m
   -> TT.FileMetadata
   -> TT.RowGroup
-  -> C.ConduitT () ParquetValue m ()
+  -> C.ConduitT () ParquetObject m ()
 sourceRowGroup source metadata rg =
   C.sequenceSources
       (map
@@ -185,7 +151,7 @@ sourceRowGroup source metadata rg =
         )
         (rg ^. TT.pinchField @"column_chunks")
       )
-    C..| CL.mapMaybe parse_record
+    C..| CL.mapMaybeM parse_record
  where
   mb_path :: TT.ColumnChunk -> Maybe [T.Text]
   mb_path cc =
@@ -193,30 +159,66 @@ sourceRowGroup source metadata rg =
       .   TT._ColumnMetaData_path_in_schema
       <$> (cc ^. TT.pinchField @"meta_data")
 
-  parse_record :: Record -> Maybe ParquetValue
-  parse_record [] = Just (ParquetObject (MkParquetObject (HM.fromList [])))
-  parse_record ((ColumnValue _ 0 _ v, _) : _) = Just $ value_to_json_value v
-  parse_record ((ColumnValue{}, []) : _) = Nothing -- Should never happen. TODO(yigitozkavci): Then make this unrepresentable.
-  parse_record ((ColumnValue r d md v, path : px) : xs) = do
-    obj              <- parse_column (ColumnValue r (d - 1) md v, px)
-    ParquetObject hm <- parse_record xs -- TODO: Partial!
-    pure $ ParquetObject $ MkParquetObject (HM.fromList [(path, obj)]) <> hm
+  -- | Given a parquet record (a set of parquet columns, really), converts it to a single JSON-like object.
+  --
+  -- It does it by traversing the list of columns, converting them to objects and combining them.
+  -- Parsing every column yields a ParquetObject and since ParquetObjects are monoids we combine them.
+  parse_record :: Record -> m (Maybe ParquetObject)
+  parse_record = fmap (fmap mconcat) $ traverse $ \(column, paths) ->
+    case NE.nonEmpty paths of
+      Nothing -> Nothing <$ logWarn
+        (  "parse_record: Record with value "
+        <> T.pack (show (_cvValue column))
+        <> " does not have any paths. Record data is corrupted."
+        )
+      Just ne_paths -> parse_column (column, ne_paths)
 
-  parse_column :: (ColumnValue, [T.Text]) -> Maybe ParquetValue
-  parse_column (ColumnValue _ 0 _ v , _        ) = Just $ value_to_json_value v
-  parse_column (ColumnValue{}       , []       ) = Nothing -- Should never happen
-  parse_column (ColumnValue r d md v, path : px) = do
-    obj <- parse_column (ColumnValue r (d - 1) md v, px)
-    pure $ ParquetObject $ MkParquetObject $ HM.fromList [(path, obj)]
+  -- | Given a parquet column, converts it to a JSON-like object.
+  --
+  -- For a given column:
+  -- { value = "something", definition_level = 3, path = ["field1", "field2", "field3"] }.
+  --
+  -- We create:
+  -- {
+  --   "field1": {
+  --     "field2": {
+  --       "field3": "something
+  --     }
+  --   }
+  -- }
+  parse_column :: (ColumnValue, NE.NonEmpty T.Text) -> m (Maybe ParquetObject)
+  parse_column (ColumnValue _ 1 _ v, path NE.:| []) =
+    pure $ Just $ MkParquetObject $ HM.fromList
+      [(path, value_to_parquet_value v)]
+  parse_column (ColumnValue _ _ _ _, _ NE.:| []) = do
+   -- This case means that we are in the last path element but definition level is not 1.
+   -- For example:
+   --
+  -- { value = "something", definition_level = 5, path = ["field1", "field2", "field3"] }.
+   --
+   -- And we reached to the following point:
+   --
+  -- { value = "something", definition_level = 3, path = ["field3"] }.
+   --
+   -- At this point we should construct the object {"field3": "something"} but this would require
+   -- a definition level of 1.
+   --
+   -- Hence this record is corrupted.
+    logWarn
+      "parse_column: No more paths exist but we still have definition levels. Column data is corrupted."
+    pure Nothing
+  parse_column (ColumnValue r d md v, path NE.:| (p : px)) = do
+    mb_obj <- parse_column (ColumnValue r (d - 1) md v, p NE.:| px)
+    pure $ mb_obj <&> \obj ->
+      MkParquetObject $ HM.fromList [(path, ParquetObject obj)]
 
-
-  value_to_json_value :: Value -> ParquetValue
-  value_to_json_value Null                 = ParquetNull
-  value_to_json_value (ValueInt64      v ) = ParquetInt v
-  value_to_json_value (ValueByteString bs) = ParquetString bs
+  value_to_parquet_value :: Value -> ParquetValue
+  value_to_parquet_value Null                 = ParquetNull
+  value_to_parquet_value (ValueInt64      v ) = ParquetInt v
+  value_to_parquet_value (ValueByteString bs) = ParquetString bs
 
 sourceColumnChunk
-  :: (C.MonadIO m, C.MonadResource m, C.MonadThrow m)
+  :: (C.MonadIO m, C.MonadResource m, C.MonadThrow m, MonadLogger m)
   => ParquetSource m
   -> TT.FileMetadata
   -> TT.ColumnChunk
@@ -229,11 +231,5 @@ sourceColumnChunk (ParquetSource source) metadata cc = do
         $  metadata
         ^. TT.pinchField @"schema"
   let offset = cc ^. TT.pinchField @"file_offset"
-  source (fromIntegral offset) C..| C.transPipe
-    (failOnExcept . runStdoutLoggingT)
-    (readColumnChunk schema_mapping cc)
- -- where
-  -- open_file_and_seek_to (fromIntegral -> offset) = do
-  --   h <- IO.openBinaryFile fp IO.ReadMode
-  --   IO.hSeek h IO.AbsoluteSeek offset
-  --   pure h
+  source (fromIntegral offset)
+    C..| C.transPipe failOnExcept (readColumnChunk schema_mapping cc)

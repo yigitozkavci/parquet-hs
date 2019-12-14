@@ -19,7 +19,7 @@ import Data.Int
 import Data.Text
 import GHC.Generics
 import GHC.TypeLits (AppendSymbol, Symbol)
-import Lens.Micro
+import Control.Lens
 import Pinch
 import Data.Binary (Binary)
 

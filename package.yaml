@@ -38,7 +38,7 @@ library:
   - monad-logger
   - conduit-extra
   - generic-lens
-  - microlens
+  - lens
   - safe
   - aeson
   - unordered-containers
@@ -66,8 +66,11 @@ tests:
     - hspec
     - QuickCheck
     - bytestring
+    - mtl
     - binary
     - filepath
     - process
     - aeson
     - text
+    - conduit
+    - monad-logger
