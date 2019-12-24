@@ -117,7 +117,7 @@ dataPageReader header mb_dict = do
 
   fill_level_default :: Int32 -> [Word32] -> [Word32]
   fill_level_default num_values = \case
-    [] -> replicate (fromIntegral num_values) 1
+    [] -> replicate (fromIntegral num_values) 0
     xs -> xs
 
   read_page_content
@@ -246,10 +246,7 @@ readRepetitionLevel
   -> Int32
   -> C.ConduitT BS.ByteString a m (Int64, [Word32])
 readRepetitionLevel encoding bit_width num_values = do
-  path <- asks _pcPath
-  if NE.length path > 1
-    then decodeLevel encoding bit_width num_values
-    else pure (0, [])
+  decodeLevel encoding bit_width num_values
 
 sizedGet :: BG.Get result -> BG.Get (Int64, result)
 sizedGet g = do
@@ -319,7 +316,7 @@ readColumnChunk
 readColumnChunk schema cc = do
   let mb_metadata = cc ^. TT.pinchField @"meta_data"
   metadata <- mb_metadata <??> "Metadata could not be found"
-  -- validateCompression metadata
+  validateCompression metadata
   let size      = metadata ^. TT.pinchField @"total_compressed_size"
   let column_ty = metadata ^. TT.pinchField @"type"
   let path      = metadata ^. TT.pinchField @"path_in_schema"

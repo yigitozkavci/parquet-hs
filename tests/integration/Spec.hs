@@ -18,6 +18,7 @@ import qualified Data.Text.Lazy.IO as LTextIO (putStrLn)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Except (runExceptT)
 import Conduit (runResourceT)
+import qualified Data.ByteString.Lazy as BS
 
 import Control.Monad.Logger
 import Parquet.Reader (readWholeParquetFile)
@@ -77,6 +78,9 @@ main :: IO ()
 main = hspec $ describe "Reader" $ do
   it "can read columns" $ do
     testParquetFormat "input1.json" $ \parqFile -> do
-      liftIO . print =<< runResourceT
+      result <- runResourceT
         (runStdoutLoggingT (runExceptT (readWholeParquetFile parqFile)))
+      case result of
+        Left  err -> fail $ show err
+        Right v   -> liftIO $ BS.putStrLn $ JSON.encode v
       pure ()
