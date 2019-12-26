@@ -76,11 +76,15 @@ putLazyTextLn = LTextIO.putStrLn
 
 main :: IO ()
 main = hspec $ describe "Reader" $ do
-  it "can read columns" $ do
-    testParquetFormat "input1.json" $ \parqFile -> do
-      result <- runResourceT
-        (runStdoutLoggingT (runExceptT (readWholeParquetFile parqFile)))
-      case result of
-        Left  err -> fail $ show err
-        Right v   -> liftIO $ BS.putStrLn $ JSON.encode v
-      pure ()
+  it "can read snappy-compressed files" $ do
+    result <-
+      runResourceT
+      $ runStderrLoggingT
+      $ filterLogger (\_ level -> level == LevelError)
+      $ runExceptT
+      $ readWholeParquetFile
+          "part-00000-495c48e6-96d6-4650-aa65-3c36a3516ddd.c000.snappy.parquet"
+    case result of
+      Left  err -> fail $ show err
+      Right v   -> BS.putStrLn $ JSON.encode v
+    pure ()

@@ -16,7 +16,8 @@ module Parquet.Stream.Reader where
 import qualified Conduit as C
 import Control.Applicative (liftA3)
 import Control.Monad.Except
-import Control.Monad.Logger
+import Control.Monad.Logger (MonadLogger)
+import Control.Monad.Logger.CallStack
 import Control.Monad.Reader
 import Data.Bifunctor (first)
 import qualified Data.Binary.Get as BG
@@ -33,6 +34,8 @@ import Data.Word (Word32, Word8)
 import Control.Lens
 import qualified Pinch
 import Safe.Exact (zipExactMay)
+import qualified Codec.Compression.Snappy as Snappy
+import qualified Data.Sequence as Seq
 
 import Parquet.Decoder (BitWidth(..), decodeBPBE, decodeRLEBPHybrid)
 import Parquet.Monad
@@ -75,35 +78,32 @@ dataPageReader
    . (PR m, MonadReader PageCtx m)
   => TT.DataPageHeader
   -> Maybe [Value]
-  -> C.ConduitT BS.ByteString ColumnValue m ()
+  -> C.ConduitT BS.ByteString ColumnValue m Int64
 dataPageReader header mb_dict = do
   let num_values         = header ^. TT.pinchField @"num_values"
   let def_level_encoding = header ^. TT.pinchField @"definition_level_encoding"
   let rep_level_encoding = header ^. TT.pinchField @"repetition_level_encoding"
   let encoding           = header ^. TT.pinchField @"encoding"
   (max_rep_level, max_def_level) <- calcMaxEncodingLevels
-  (_rep_consumed, fill_level_default num_values -> rep_data) <-
+  (rep_consumed , fill_level_default num_values -> rep_data) <-
     readRepetitionLevel
       rep_level_encoding
       (maxLevelToBitWidth max_rep_level)
       num_values
-  (_def_consumed, fill_level_default num_values -> def_data) <-
+  (def_consumed, fill_level_default num_values -> def_data) <-
     readDefinitionLevel
       def_level_encoding
       (maxLevelToBitWidth max_def_level)
       num_values
-  level_data <- zip_level_data rep_data def_data
-  read_page_content encoding level_data num_values (fromIntegral max_def_level)
-  pure ()
+  level_data    <- zip_level_data rep_data def_data
+  page_consumed <- read_page_content
+    encoding
+    level_data
+    num_values
+    (fromIntegral max_def_level)
+    (fromIntegral max_rep_level)
+  pure $ rep_consumed + def_consumed + page_consumed
  where
-  find_from_dict
-    :: forall  m0 . MonadError T.Text m0 => [Value] -> Word32 -> m0 Value
-  find_from_dict dict (fromIntegral -> d_index) = case dict ^? ix d_index of
-    Nothing ->
-      throwError $ "A dictionary value couldn't be found in index " <> T.pack
-        (show d_index)
-    Just val -> pure val
-
   zip_level_data
     :: forall  m0 a b . MonadError T.Text m0 => [a] -> [b] -> m0 [(a, b)]
   zip_level_data rep_data def_data =
@@ -125,27 +125,60 @@ dataPageReader header mb_dict = do
     -> [(Word32, Word32)]
     -> Int32
     -> Word32
-    -> C.ConduitT BS.ByteString ColumnValue m ()
-  read_page_content encoding level_data num_values max_def_level =
-    case (mb_dict, encoding) of
+    -> Word32
+    -> C.ConduitT BS.ByteString ColumnValue m Int64
+  read_page_content encoding level_data num_values max_def_level max_rep_level
+    = case (mb_dict, encoding) of
       (Nothing, TT.PLAIN _) -> do
-        vals <- for level_data $ \(r, d) -> if
-          | d == max_def_level -> do
-            (_, val) <- decodeValue
-            pure (ColumnValue r d max_def_level val)
-          | otherwise -> pure $ ColumnValue r d max_def_level Null
+        logError $ "(1) NODICT"
+        (consumed, vals) <- foldM
+          (\(i_consumed, vals) (r, d) -> if d == max_def_level
+            then do
+              (consumed, val) <- decodeValue
+              pure
+                ( i_consumed + consumed
+                , vals Seq.|> ColumnValue r d max_def_level val
+                )
+            else pure
+              (i_consumed, vals Seq.|> ColumnValue r d max_def_level Null)
+          )
+          (0, Seq.empty)
+          level_data
         C.yieldMany vals
+        logError $ "(2) NODICT"
+        pure consumed
       (Just _, TT.PLAIN _) -> throwError
         "We shouldn't have PLAIN-encoded data pages with a dictionary."
       (Just dict, TT.PLAIN_DICTIONARY _) -> do
-        !bit_width  <- CB.sinkGet BG.getWord8
-        val_indexes <- CB.sinkGet
-          $ decodeRLEBPHybrid (BitWidth bit_width) num_values
-        vals <- construct_dict_values max_def_level dict level_data val_indexes
+        logError $ "(1) DICT"
+        !bit_width              <- CB.sinkGet BG.getWord8
+        -- val_indexes <-
+        --   traverse
+        --       (\(_, v) -> case v of
+        --         ValueInt64 i -> pure (fromIntegral i)
+        --         ValueInt32 i -> pure (fromIntegral i)
+        --       )
+        --     =<< replicateM (fromIntegral num_values) decodeValue
+        (consumed, val_indexes) <- CB.sinkGet $ sizedGet $ decodeRLEBPHybrid
+          (BitWidth bit_width)
+          num_values
+
+        logError $ "(2) Level length: " <> T.pack (show (length level_data))
+        logError $ "(2) Index length: " <> T.pack (show (length val_indexes))
+        logError $ "(2) Numvals: " <> T.pack (show num_values)
+        vals <- construct_dict_values
+          max_def_level
+          max_rep_level
+          dict
+          level_data
+          val_indexes
         C.yieldMany vals
-      (Nothing, TT.PLAIN_DICTIONARY _) ->
+        pure consumed
+      (Nothing, TT.PLAIN_DICTIONARY _) -> do
+        path <- asks _pcPath
         throwError
-          "Data page has PLAIN_DICTIONARY encoding but we don't have a dictionary yet."
+          $ "Data page has PLAIN_DICTIONARY encoding but we don't have a dictionary yet."
+          <> T.pack (show path)
       other ->
         throwError
           $  "Don't know how to encode data pages with encoding: "
@@ -155,27 +188,59 @@ dataPageReader header mb_dict = do
   -- constructs values for this dictionary-encoded page.
   construct_dict_values
     :: forall m0
-     . (MonadError T.Text m0)
+     . (MonadError T.Text m0, MonadLogger m0)
     => Word32
+    -> Word32
     -> [Value]
     -> [(Word32, Word32)]
     -> [Word32]
     -> m0 [ColumnValue]
-  construct_dict_values _ _ [] _ = pure []
-  construct_dict_values _ _ _ [] =
-    throwError
-      "There are not enough level data for given amount of dictionary indexes."
-  construct_dict_values max_def_level dict ((r, d) : lx) (v : vx)
+  construct_dict_values _ _ _ [] _ = pure []
+  construct_dict_values _ _ dict levels [] =
+    []
+      <$ (  logError ("Skipping a dict. Dict: " <> T.pack (show (length dict)))
+         *> logError
+              ("Skipping a dict. Levels: " <> T.pack (show (length levels)))
+         )
+    -- throwError
+    --   $ "There are not enough level data for given amount of dictionary indexes."
+    --   <> T.pack (show p)
+  construct_dict_values max_def_level max_rep_level dict ((r, d) : lx) (v : vx)
     | d == max_def_level = do
       val <- find_from_dict dict v
+      -- logError
+      --   $  "Reducing: r="
+      --   <> T.pack (show r)
+      --   <> ", d="
+      --   <> T.pack (show d)
+      --   <> ", max_def_level="
+      --   <> T.pack (show max_def_level)
+      --   <> ", val="
+      --   <> T.pack (show val)
       (ColumnValue r d max_def_level val :)
-        <$> construct_dict_values max_def_level dict lx vx
+        <$> construct_dict_values max_def_level max_rep_level dict lx vx
     | otherwise = do
+      -- logError
+      --   $  "Otherwise: r="
+      --   <> T.pack (show r)
+      --   <> ", d="
+      --   <> T.pack (show d)
+      --   <> ", max_def_level="
+      --   <> T.pack (show max_def_level)
       (ColumnValue r d max_def_level Null :)
-        <$> construct_dict_values max_def_level dict lx (v : vx)
+        <$> construct_dict_values max_def_level max_rep_level dict lx (v : vx)
+
+  find_from_dict
+    :: forall  m0 . MonadError T.Text m0 => [Value] -> Word32 -> m0 Value
+  find_from_dict dict (fromIntegral -> d_index) = case dict ^? ix d_index of
+    Nothing ->
+      throwError $ "A dictionary value couldn't be found in index " <> T.pack
+        (show d_index)
+    Just val -> pure val
 
 data Value
   = ValueInt64 Int64
+  | ValueInt32 Int32
   | ValueByteString BS.ByteString
   | Null
   deriving (Show, Eq)
@@ -193,6 +258,9 @@ decodeValue = asks _pcColumnTy >>= \case
   (TT.INT64 _) -> do
     (consumed, result) <- CB.sinkGet (sizedGet BG.getInt64le)
     pure (consumed, ValueInt64 result)
+  (TT.INT32 _) -> do
+    (consumed, result) <- CB.sinkGet (sizedGet BG.getInt32le)
+    pure (consumed, ValueInt32 result)
   ty ->
     throwError
       $  "Don't know how to decode value of type "
@@ -215,6 +283,7 @@ data PageCtx =
     { _pcSchema :: M.Map T.Text TT.SchemaElement
     , _pcPath :: NE.NonEmpty T.Text
     , _pcColumnTy :: TT.Type
+    , _pcColumnCodec :: TT.CompressionCodec
     }
   deriving (Show, Eq)
 
@@ -309,56 +378,167 @@ validateCompression metadata =
         throwError "This library doesn't support compression algorithms yet."
 
 readColumnChunk
-  :: PR m
+  :: forall m
+   . PR m
   => M.Map T.Text TT.SchemaElement
   -> TT.ColumnChunk
   -> C.ConduitT BS.ByteString ColumnValue m ()
 readColumnChunk schema cc = do
   let mb_metadata = cc ^. TT.pinchField @"meta_data"
   metadata <- mb_metadata <??> "Metadata could not be found"
-  validateCompression metadata
-  let size      = metadata ^. TT.pinchField @"total_compressed_size"
-  let column_ty = metadata ^. TT.pinchField @"type"
-  let path      = metadata ^. TT.pinchField @"path_in_schema"
-  ne_path <- NE.nonEmpty path <??> "Schema path cannot be empty"
-  let page_ctx = PageCtx schema ne_path column_ty
-  C.runReaderC page_ctx $ readPage size Nothing
+  -- validateCompression metadata
+  page_ctx <- mk_page_ctx metadata
+  let column_chunk_size = metadata ^. TT.pinchField @"total_uncompressed_size"
+  logError $ T.pack $ show metadata
+  read_column_chunk_contents page_ctx column_chunk_size Nothing
+ where
+  mk_page_ctx
+    :: TT.ColumnMetaData -> C.ConduitT BS.ByteString ColumnValue m PageCtx
+  mk_page_ctx metadata = do
+    let column_ty    = metadata ^. TT.pinchField @"type"
+    let path         = metadata ^. TT.pinchField @"path_in_schema"
+    let column_codec = metadata ^. TT.pinchField @"codec"
+    ne_path <- NE.nonEmpty path <??> "Schema path cannot be empty"
+    pure $ PageCtx schema ne_path column_ty column_codec
+
+  read_column_chunk_contents
+    :: PageCtx
+    -> Int64
+    -> Maybe [Value]
+    -> C.ConduitT BS.ByteString ColumnValue m ()
+  read_column_chunk_contents _ 0 mb_dict =
+    logError "Finished reading a column chunk!!!"
+  read_column_chunk_contents page_ctx remaining mb_dict = do
+    logError
+      $  "Reading a column chunk"
+      <> (T.pack $ show $ _pcPath page_ctx)
+      <> ", rem_size: "
+      <> T.pack (show remaining)
+    (consumed, new_mb_dict) <- C.runReaderC page_ctx
+      $ readPage remaining mb_dict
+    read_column_chunk_contents page_ctx (remaining - consumed) new_mb_dict
 
 readPage
-  :: (MonadReader PageCtx m, PR m)
+  :: forall m
+   . (MonadReader PageCtx m, PR m)
   => Int64
   -> Maybe [Value]
-  -> C.ConduitT BS.ByteString ColumnValue m ()
-readPage 0         _       = pure ()
-readPage remaining mb_dict = do
-  (page_header_size, page_header :: TT.PageHeader) <- decodeConduit remaining
-  let
-    page_content_size = page_header ^. TT.pinchField @"uncompressed_page_size"
-  let
-    validate_consumed_page_bytes consumed =
-      unless (fromIntegral page_content_size == consumed)
-        $ throwError "Reader did not consume the whole page!"
-  let page_size = fromIntegral page_header_size + page_content_size
-  case
-      ( page_header ^. TT.pinchField @"dictionary_page_header"
-      , page_header ^. TT.pinchField @"data_page_header"
-      , mb_dict
-      )
-    of
-      (Just dict_page_header, Nothing, Nothing) -> do
-        (page_consumed, dict) <- dictPageReader dict_page_header
-        validate_consumed_page_bytes page_consumed
-        readPage (remaining - fromIntegral page_size) (Just dict)
-      (Just _dict_page_header, Nothing, Just _dict) ->
-        throwError "Found dictionary page while we already had a dictionary."
-      (Nothing, Just dp_header, Nothing) -> do
-        dataPageReader dp_header Nothing
-      (Nothing, Just dp_header, Just dict) -> do
-        dataPageReader dp_header (Just dict)
-      (Nothing, Nothing, _) -> throwError
-        "Page doesn't have any of the dictionary or data page header."
-      (Just _, Just _, _) ->
-        throwError "Page has both dictionary and data page headers."
+  -> C.ConduitT BS.ByteString ColumnValue m (Int64, Maybe [Value])
+readPage column_chunk_size mb_dict = do
+   -- FIXME(yigitozkavci): should not use the whole column chunk size for reading a single page's header.
+  (page_header_size, page_header) <- read_page_header
+  let page_size = page_header ^. TT.pinchField @"uncompressed_page_size"
+  path <- asks _pcPath
+  logError
+    $  "Read page header. Path: "
+    <> T.pack (show path)
+    <> ", Size:"
+    <> T.pack (show page_size)
+    <> ", Page Header Size:"
+    <> T.pack (show page_header_size)
+    <> ", Chunk Size:"
+    <> T.pack (show column_chunk_size)
+    <> ", PageHeader:"
+    <> T.pack (show page_header)
+  new_mb_dict <- read_page_contents page_header page_size mb_dict
+  pure (fromIntegral page_header_size + fromIntegral page_size, new_mb_dict)
+ where
+  read_page_header :: C.ConduitT BS.ByteString o m (Int, TT.PageHeader)
+  read_page_header = do
+    path <- asks _pcPath
+    logError $ "Reading a page header" <> T.pack (show path)
+    decodeConduit column_chunk_size
+
+  read_page_contents
+    :: TT.PageHeader
+    -> Int32
+    -> Maybe [Value]
+    -> C.ConduitT BS.ByteString ColumnValue m (Maybe [Value])
+  read_page_contents _ 0 mb_dict = do
+    logError "Finished reading a page!!!"
+    pure mb_dict
+  read_page_contents page_header remaining_page_size mb_dict = do
+    path <- asks _pcPath
+    logError
+      $  "Reading a page content. Remaining: "
+      <> T.pack (show remaining_page_size)
+      <> ", Path: "
+      <> T.pack (show path)
+    let
+      uncompressed_page_size =
+        page_header ^. TT.pinchField @"uncompressed_page_size"
+      validate_consumed_page_bytes ty consumed =
+        unless (fromIntegral uncompressed_page_size == consumed)
+          $  throwError
+          $  T.pack (show ty)
+          <> " Reader did not consume the whole page! Size: "
+          <> T.pack (show remaining_page_size)
+          <> " Consumed: "
+          <> T.pack (show consumed)
+    decompressStream $ page_header ^. TT.pinchField @"compressed_page_size"
+    case
+        ( page_header ^. TT.pinchField @"dictionary_page_header"
+        , page_header ^. TT.pinchField @"data_page_header"
+        , mb_dict
+        )
+      of
+        (Just dict_page_header, Nothing, Nothing) -> do
+          logError . ("Reading a DICT page" <>) . T.pack . show =<< asks _pcPath
+          (page_consumed, dict) <- dictPageReader dict_page_header
+          validate_consumed_page_bytes "Dict Page" page_consumed -- Dict pages are required to be fully consumed
+          path <- asks _pcPath
+          logError
+            $  "Read a DICT page. Path: "
+            <> T.pack (show path)
+            <> ", Remaining: "
+            <> T.pack (show remaining_page_size)
+            <> ", Consumed: "
+            <> T.pack (show page_consumed)
+          read_page_contents
+            page_header
+            (remaining_page_size - fromIntegral page_consumed)
+            (Just dict)
+        (Just _dict_page_header, Nothing, Just _dict) ->
+          throwError "Found dictionary page while we already had a dictionary."
+        (Nothing, Just dp_header, Nothing) -> do
+          logError . ("Reading a DATA page" <>) . T.pack . show =<< asks _pcPath
+          page_consumed <- dataPageReader dp_header Nothing
+          -- validate_consumed_page_bytes "Data Page" consumed
+          read_page_contents
+            page_header
+            (remaining_page_size - fromIntegral page_consumed)
+            Nothing
+        (Nothing, Just dp_header, Just dict) -> do
+          logError
+            .   ("Reading a DATA_DICT page" <>)
+            .   T.pack
+            .   show
+            =<< asks _pcPath
+          page_consumed <- dataPageReader dp_header (Just dict)
+          logError
+            $  "Read a DATA_DICT page. Path: "
+            <> T.pack (show path)
+            <> ", Remaining: "
+            <> T.pack (show remaining_page_size)
+            <> ", Consumed: "
+            <> T.pack (show page_consumed)
+          -- validate_consumed_page_bytes "Data Page" page_consumed
+          read_page_contents
+            page_header
+            (remaining_page_size - fromIntegral page_consumed)
+            (Just dict)
+        (Nothing, Nothing, _) -> throwError
+          "Page doesn't have any of the dictionary or data page header."
+        (Just _, Just _, _) ->
+          throwError "Page has both dictionary and data page headers."
+
+decompressStream size = do
+  codec <- asks _pcColumnCodec
+  case codec of
+    TT.SNAPPY _ -> C.leftover =<< Snappy.decompress . BS.pack <$> replicateM
+      (fromIntegral size)
+      (CB.sinkGet BG.getWord8)
+    _ -> pure ()
 
 failOnError :: Show err => IO (Either err b) -> IO b
 failOnError v = v >>= \case

@@ -11,6 +11,13 @@ packages:
       sha256: b6d0c47fd5867760bacb4c83cac466c68f801e7a04824e6f3df5e2084c0b609e
   original:
     hackage: pinch-0.3.5.0
+- completed:
+    hackage: snappy-0.2.0.2@sha256:2931b03c5fdab2dac8d7eadb3be2f4ef8906666e43f1f1db65a06efd57ea701b,1591
+    pantry-tree:
+      size: 709
+      sha256: cd05c6ddfbbd3969adab3869d38d161e5ec8e72b1a72e00ca08f5e39538368cf
+  original:
+    hackage: snappy-0.2.0.2
 snapshots:
 - completed:
     size: 524127

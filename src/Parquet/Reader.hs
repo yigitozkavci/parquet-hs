@@ -114,12 +114,13 @@ readWholeParquetFile
   -> m [ParquetValue]
 readWholeParquetFile inputFp = do
   metadata <- readMetadata (localParquetFile inputFp)
+  logError $ T.pack $ show $ metadata
   (`runReaderT` metadata)
     $    C.runConduit
     $    traverse_
            (sourceRowGroup (localParquetFile inputFp))
            (metadata ^. TT.pinchField @"row_groups")
-    C..| CL.consume
+    C..| CL.take 1000
 
 type Record = [(ColumnValue, [T.Text])]
 
@@ -308,7 +309,7 @@ sourceRowGroup
   -> TT.RowGroup
   -> C.ConduitT () ParquetValue m ()
 sourceRowGroup source rg = do
-  logInfo "Parsing new row group."
+  logError "Parsing new row group."
   C.sequenceSources
       (map
         (\cc ->
@@ -341,6 +342,7 @@ sourceRowGroup source rg = do
 
 valueToParquetValue :: Value -> ParquetValue
 valueToParquetValue Null                 = ParquetNull
+valueToParquetValue (ValueInt32      v ) = ParquetInt (fromIntegral v)
 valueToParquetValue (ValueInt64      v ) = ParquetInt v
 valueToParquetValue (ValueByteString bs) = ParquetString bs
 

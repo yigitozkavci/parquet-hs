@@ -8,5 +8,4 @@ import Control.Monad.Logger
 main :: IO ()
 main = do
   let fp = "test.parquet"
-  void $ runStdoutLoggingT $ C.runResourceT $ runExceptT $ readWholeParquetFile
-    fp
+  void $ runNoLoggingT $ C.runResourceT $ runExceptT $ readWholeParquetFile fp
