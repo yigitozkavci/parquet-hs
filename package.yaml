@@ -43,6 +43,7 @@ library:
   - http-conduit
   - http-client
   - http-types
+  - snappy
 
 tests:
   parquet-hs-unit:

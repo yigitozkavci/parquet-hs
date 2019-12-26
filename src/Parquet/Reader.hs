@@ -30,10 +30,13 @@ import qualified Data.HashMap.Strict as HM
 import Control.Monad.Except
 import Control.Monad (foldM)
 import qualified Data.Sequence as Seq
+import qualified Data.Aeson as JSON
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Char8 as BS8
 import qualified Conduit as C
+import qualified Data.Conduit.Combinators as CC
 import System.IO
   (IOMode(ReadMode), openFile, SeekMode(AbsoluteSeek, SeekFromEnd), hSeek)
 import Network.HTTP.Types.Status (statusIsSuccessful)
@@ -111,7 +114,7 @@ readWholeParquetFile
      , MonadLogger m
      )
   => String
-  -> m [ParquetValue]
+  -> m ()
 readWholeParquetFile inputFp = do
   metadata <- readMetadata (localParquetFile inputFp)
   logError $ T.pack $ show $ metadata
@@ -120,7 +123,9 @@ readWholeParquetFile inputFp = do
     $    traverse_
            (sourceRowGroup (localParquetFile inputFp))
            (metadata ^. TT.pinchField @"row_groups")
-    C..| CL.take 1000
+    C..| CC.take 1000
+    C..| CL.map ((", " <>) . LBS.toStrict . JSON.encode)
+    C..| C.sinkFile "pog.json"
 
 type Record = [(ColumnValue, [T.Text])]
 

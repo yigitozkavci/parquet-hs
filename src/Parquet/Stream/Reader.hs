@@ -13,6 +13,7 @@
 
 module Parquet.Stream.Reader where
 
+import Data.Functor (($>))
 import qualified Conduit as C
 import Control.Applicative (liftA3)
 import Control.Monad.Except
@@ -24,6 +25,7 @@ import qualified Data.Binary.Get as BG
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Conduit.Binary as CB
+import qualified Data.Conduit.Combinators as CC
 import qualified Data.Conduit.Serialization.Binary as CB
 import Data.Int (Int32, Int64)
 import qualified Data.List.NonEmpty as NE
@@ -427,21 +429,31 @@ readPage
 readPage column_chunk_size mb_dict = do
    -- FIXME(yigitozkavci): should not use the whole column chunk size for reading a single page's header.
   (page_header_size, page_header) <- read_page_header
-  let page_size = page_header ^. TT.pinchField @"uncompressed_page_size"
+  let
+    compressed_page_size = page_header ^. TT.pinchField @"compressed_page_size"
+  let
+    uncompressed_page_size =
+      page_header ^. TT.pinchField @"uncompressed_page_size"
   path <- asks _pcPath
   logError
     $  "Read page header. Path: "
     <> T.pack (show path)
     <> ", Size:"
-    <> T.pack (show page_size)
+    <> T.pack (show (fromIntegral uncompressed_page_size))
     <> ", Page Header Size:"
     <> T.pack (show page_header_size)
     <> ", Chunk Size:"
     <> T.pack (show column_chunk_size)
     <> ", PageHeader:"
     <> T.pack (show page_header)
-  new_mb_dict <- read_page_contents page_header page_size mb_dict
-  pure (fromIntegral page_header_size + fromIntegral page_size, new_mb_dict)
+  new_mb_dict <- read_page_contents
+    page_header
+    (fromIntegral uncompressed_page_size)
+    mb_dict
+  pure
+    ( fromIntegral page_header_size + fromIntegral uncompressed_page_size
+    , new_mb_dict
+    )
  where
   read_page_header :: C.ConduitT BS.ByteString o m (Int, TT.PageHeader)
   read_page_header = do

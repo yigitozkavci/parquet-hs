@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE ViewPatterns      #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Parquet.Decoder where
@@ -104,12 +105,20 @@ decodeRLEBPHybrid bit_width num_values = do
   -- Unsafe fromInteger justification:
   -- run_len value being in range [1, 2^31-1]
   -- is guaranteed by the protocol.
-  case encoding_ty of
+  vals <- case encoding_ty of
     0x00 -> decodeRLE bit_width $ fromInteger run_len
-    0x01 -> take (fromIntegral num_values)
-      <$> decodeBPLE bit_width (fromInteger run_len)
+    0x01 -> do
+      decodeBPLE bit_width (fromInteger run_len)
     _ -> fail
       "Impossible happened! 0x01 .&. _ resulted in a value larger than 0x01"
+
+  if length vals < fromIntegral num_values
+    then (vals <>) <$> decodeRLEBPHybrid
+      bit_width
+      (num_values - fromIntegral (length vals))
+    else if length vals == fromIntegral num_values
+      then pure vals
+      else pure $ take (fromIntegral num_values) vals
 
 decodeVarint :: Get Integer
 decodeVarint = go cLeb128ByteLimit 0 0
