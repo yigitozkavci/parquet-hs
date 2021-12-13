@@ -1,0 +1,38 @@
+{
+    "niv": {
+        "branch": "master",
+        "description": "Easy dependency management for Nix projects",
+        "homepage": "https://github.com/nmattia/niv",
+        "owner": "nmattia",
+        "repo": "niv",
+        "rev": "5830a4dd348d77e39a0f3c4c762ff2663b602d4c",
+        "sha256": "1d3lsrqvci4qz2hwjrcnd8h5vfkg8aypq3sjd4g3izbc8frwz5sm",
+        "type": "tarball",
+        "url": "https://github.com/nmattia/niv/archive/5830a4dd348d77e39a0f3c4c762ff2663b602d4c.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "nixpkgs": {
+        "branch": "fix-pinch",
+        "description": "Nix Packages collection",
+        "homepage": "",
+        "owner": "dalpd",
+        "repo": "nixpkgs",
+        "rev": "3c80a171553d3005f23dfb90751c84ab4ef0bccc",
+        "sha256": "1ha9jpspcwwrh8inzjm5l7k3fgv4cmcnlj89fih48fjm5slk62i7",
+        "type": "tarball",
+        "url": "https://github.com/dalpd/nixpkgs/archive/3c80a171553d3005f23dfb90751c84ab4ef0bccc.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "relude": {
+        "branch": "main",
+        "description": "🌀 Safe, performant, user-friendly and lightweight Haskell standard library",
+        "homepage": "https://kowainik.github.io/projects/relude",
+        "owner": "kowainik",
+        "repo": "relude",
+        "rev": "442a51ca272f588c54abe86ca7acb79e456109b5",
+        "sha256": "0vzka3rsapx7l1zxvc75wfzrpf4wnl6h0fxr0z5q21h1mmhd973p",
+        "type": "tarball",
+        "url": "https://github.com/kowainik/relude/archive/442a51ca272f588c54abe86ca7acb79e456109b5.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    }
+}
