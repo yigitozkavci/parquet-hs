@@ -1,21 +1,21 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Parquet.ParquetObject where
 
-import Control.Lens
-import Data.Binary (Binary(..))
 import Codec.Serialise (Serialise)
-import GHC.Generics (Generic)
+import Control.Lens
+import qualified Data.Aeson as JSON
+import Data.Binary (Binary (..))
 import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as HM
+import Data.Int (Int64)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import Data.Int (Int64)
-import qualified Data.Aeson as JSON
+import GHC.Generics (Generic)
 
 newtype ParquetObject = MkParquetObject (HM.HashMap T.Text ParquetValue)
   deriving (Eq, Show, Generic, Serialise)
@@ -49,8 +49,8 @@ instance Binary ParquetList where
 instance JSON.ToJSON ParquetList where
   toJSON (MkParquetList l) = JSON.toJSON l
 
-data ParquetValue =
-    ParquetObject !ParquetObject
+data ParquetValue
+  = ParquetObject !ParquetObject
   | ParquetList !ParquetList
   | ParquetInt !Int64
   | ParquetString !BS.ByteString
@@ -61,13 +61,13 @@ data ParquetValue =
 instance JSON.ToJSON ParquetValue where
   toJSON = \case
     ParquetObject obj -> JSON.toJSON obj
-    ParquetList   l   -> JSON.toJSON l
-    ParquetInt    i64 -> JSON.Number (fromIntegral i64)
-    ParquetString bs  -> case T.decodeUtf8' bs of
+    ParquetList l -> JSON.toJSON l
+    ParquetInt i64 -> JSON.Number (fromIntegral i64)
+    ParquetString bs -> case T.decodeUtf8' bs of
       Right t -> JSON.String t
-      Left  _ -> JSON.String "<non-utf8-string>"
+      Left _ -> JSON.String "<non-utf8-string>"
     ParquetNull -> JSON.Null
-    EmptyValue  -> JSON.Null
+    EmptyValue -> JSON.Null
 
 makeLenses ''ParquetObject
 makePrisms ''ParquetObject
