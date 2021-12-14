@@ -11,7 +11,11 @@ import qualified Data.Text as T
 
 infixl 4 <??>
 
-failOnExcept :: Monad m => ExceptT T.Text m a -> m a
+failOnExcept ::
+  ( Monad m,
+    MonadFail m
+  ) =>
+  ExceptT T.Text m a -> m a
 failOnExcept =
   runExceptT >=> \case
     Left err -> fail (T.unpack err)
