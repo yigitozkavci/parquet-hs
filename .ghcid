@@ -1,1 +1,1 @@
---command="stack repl --ghc-options=\"-Wall\""
+--command="cabal repl"
