@@ -12,15 +12,15 @@
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nixpkgs": {
-        "branch": "fix-pinch",
+        "branch": "release-21.11",
         "description": "Nix Packages collection",
         "homepage": "",
-        "owner": "dalpd",
+        "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "3c80a171553d3005f23dfb90751c84ab4ef0bccc",
-        "sha256": "1ha9jpspcwwrh8inzjm5l7k3fgv4cmcnlj89fih48fjm5slk62i7",
+        "rev": "7796065f51dd8a60fb58a524b8fa68699a6f57d3",
+        "sha256": "1sv4bri3vykx54bw9aaphzxcnsjb7wra2n9gyi5ky07fdk359j45",
         "type": "tarball",
-        "url": "https://github.com/dalpd/nixpkgs/archive/3c80a171553d3005f23dfb90751c84ab4ef0bccc.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs/archive/7796065f51dd8a60fb58a524b8fa68699a6f57d3.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "relude": {

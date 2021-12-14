@@ -1,0 +1,3 @@
+packages: *.cabal
+
+write-ghc-environment-files: never

@@ -11,20 +11,15 @@ let
   myHaskellPackages = baseHaskellPkgs.override {
     overrides = self: super: {
       parquet-hs = self.callCabal2nix "parquet-hs" (./.) { };
-
-      relude = self.callCabal2nix "relude" sources.relude { };
-
-      optics-th = self.optics-th_0_4;
-      optics-extra = self.optics-extra_0_4;
-
-      openapi3 = dontCheck super.openapi3;
+      # I opened up an MR fixing `pinch` on nixpkgs by bumping the version of
+      # network `pinch` uses but it's causing issues here so instead we're
+      # just disabling the test suite here as that's where the error is.
+      pinch = dontCheck super.pinch;
     };
   };
 
   shell = myHaskellPackages.shellFor {
-    packages = p: with p; [
-      parquet-hs
-    ];
+    packages = p: with p; [ parquet-hs ];
 
     buildInputs = with pkgs.haskellPackages; [
       cabal-install
@@ -35,8 +30,7 @@ let
       pkgs.nixpkgs-fmt
     ];
 
-    libraryHaskellDepends = [
-    ];
+    libraryHaskellDepends = [ ];
 
     shellHook = ''
       set -e
@@ -45,8 +39,7 @@ let
     '';
   };
 
-in
-{
+in {
   inherit shell;
   inherit myHaskellPackages;
   parquet-hs = myHaskellPackages.parquet-hs;
