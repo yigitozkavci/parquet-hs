@@ -1,7 +1,7 @@
 module Main (main) where
 
 import qualified Parquet.Decoder.Spec
-import           Test.Hspec
+import Test.Hspec
 
 main :: IO ()
 main =
