@@ -2,7 +2,9 @@
 
 let
   sources = import ./nix/sources.nix;
-  pkgs = import sources.nixpkgs { };
+  # `pinch` is fixed on haskell-updates but it'll be a while before
+  # it's backported and we prefer using the release branch
+  pkgs = import sources.nixpkgs { config.allowBroken = true; };
 
   inherit (pkgs.haskell.lib) dontCheck;
 
