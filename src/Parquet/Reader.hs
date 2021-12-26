@@ -14,7 +14,6 @@ module Parquet.Reader where
 import qualified Conduit as C
 import Control.Arrow ((&&&))
 import Control.Lens hiding (ix)
-import Control.Monad (foldM)
 import Control.Monad.Except
 import Control.Monad.Logger (MonadLogger, runNoLoggingT)
 import Control.Monad.Logger.CallStack (logError, logInfo, logWarn)
@@ -25,7 +24,6 @@ import qualified Data.ByteString.Char8 as BS8
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.List as CL
 import Data.Foldable (traverse_)
-import Data.Functor ((<$))
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
@@ -74,7 +72,12 @@ readFieldTypeMapping fm =
             Just ty -> pure (name, ty)
 
 readMetadata ::
-  (MonadError T.Text m, MonadIO m) => ParquetSource m -> m TT.FileMetadata
+  ( MonadError T.Text m,
+    MonadIO m,
+    MonadFail m
+  ) =>
+  ParquetSource m ->
+  m TT.FileMetadata
 readMetadata (ParquetSource source) = do
   bs <- C.runConduit (source (-8) C..| CB.take 8)
   case BG.runGetOrFail BG.getWord32le bs of
@@ -93,7 +96,11 @@ localParquetFile fp = ParquetSource $ \pos -> C.sourceIOHandle $ do
   pure h
 
 remoteParquetFile ::
-  (C.MonadResource m, C.MonadThrow m, C.MonadIO m) => Url -> ParquetSource m
+  ( C.MonadResource m,
+    C.MonadThrow m,
+    C.MonadIO m,
+    MonadFail m
+  ) => Url -> ParquetSource m
 remoteParquetFile url = ParquetSource $ \pos -> do
   req <- parseRequest url
   let rangedReq = req {requestHeaders = mkRangeHeader pos : requestHeaders req}
@@ -118,7 +125,8 @@ readWholeParquetFile ::
     MonadIO m,
     MonadError T.Text m,
     C.MonadResource m,
-    MonadLogger m
+    MonadLogger m,
+    MonadFail m
   ) =>
   String ->
   m [ParquetValue]
@@ -155,7 +163,8 @@ sourceRowGroupFromRemoteFile ::
     C.MonadIO m,
     C.MonadThrow m,
     MonadLogger m,
-    MonadReader TT.FileMetadata m
+    MonadReader TT.FileMetadata m,
+    MonadFail m
   ) =>
   String ->
   TT.RowGroup ->
@@ -322,7 +331,8 @@ sourceRowGroup ::
     C.MonadIO m,
     C.MonadThrow m,
     MonadLogger m,
-    MonadReader TT.FileMetadata m
+    MonadReader TT.FileMetadata m,
+    MonadFail m
   ) =>
   ParquetSource m ->
   TT.RowGroup ->
@@ -460,7 +470,8 @@ sourceColumnChunk ::
     C.MonadResource m,
     C.MonadThrow m,
     MonadLogger m,
-    MonadReader TT.FileMetadata m
+    MonadReader TT.FileMetadata m,
+    MonadFail m
   ) =>
   ParquetSource m ->
   TT.ColumnChunk ->
