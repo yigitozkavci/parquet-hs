@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Main
   ( main,
   )
@@ -9,8 +11,10 @@ import Control.Monad.Except (runExceptT)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Logger
 import qualified Data.Aeson as JSON
-import qualified Data.ByteString.Lazy as BS
-import qualified Data.ByteString.Lazy as LByteString (ByteString, toStrict)
+import qualified Data.ByteString.Char8 as BS8
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy.Char8 as LBS8
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as TextIO (putStrLn)
@@ -21,6 +25,7 @@ import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
 import System.Process
 import Test.Hspec
+import Text.Pretty.Simple (pString)
 
 testPath :: String
 testPath = "tests" </> "integration"
@@ -40,7 +45,7 @@ outParquetFilePath = testPath </> "test.parquet"
 pysparkPythonEnvName :: String
 pysparkPythonEnvName = "PYSPARK_PYTHON"
 
-testParquetFormat :: String -> (String -> IO ()) -> IO ()
+testParquetFormat :: String -> (String -> IO () -> IO ()) -> IO ()
 testParquetFormat inputFile performTest =
   bracket_
     (setEnv pysparkPythonEnvName "/usr/bin/python3")
@@ -58,18 +63,20 @@ testParquetFormat inputFile performTest =
           </> intermediateDir
           </> "*.parquet "
           <> outParquetFilePath
-      performTest $ outParquetFilePath
-      callProcess "rm" ["-rf", testPath </> intermediateDir]
+
+      let close = callProcess "rm" ["-rf", testPath </> intermediateDir]
+      performTest outParquetFilePath close
+      close
 
 -- callProcess "rm" ["-f", outParquetFilePath]
 
-lazyByteStringToText :: LByteString.ByteString -> T.Text
-lazyByteStringToText = T.decodeUtf8 . LByteString.toStrict
+lazyByteStringToText :: LBS.ByteString -> T.Text
+lazyByteStringToText = T.decodeUtf8 . LBS.toStrict
 
-lazyByteStringToString :: LByteString.ByteString -> String
+lazyByteStringToString :: LBS.ByteString -> String
 lazyByteStringToString = T.unpack . lazyByteStringToText
 
-putLazyByteStringLn :: LByteString.ByteString -> IO ()
+putLazyByteStringLn :: LBS.ByteString -> IO ()
 putLazyByteStringLn = TextIO.putStrLn . lazyByteStringToText
 
 putLazyTextLn :: LText.Text -> IO ()
@@ -79,11 +86,14 @@ main :: IO ()
 main = hspec $
   describe "Reader" $ do
     it "can read columns" $ do
-      testParquetFormat "input1.json" $ \parqFile -> do
+      testParquetFormat "input1.json" $ \parqFile closePrematurely -> do
         result <-
           runResourceT
             (runStdoutLoggingT (runExceptT (readWholeParquetFile parqFile)))
         case result of
           Left err -> fail $ show err
-          Right v -> liftIO $ BS.putStrLn $ JSON.encode v
+          Right v -> do
+            origJson :: Maybe JSON.Value <- JSON.decode <$> LBS.readFile (testDataPath </> "input1.json")
+            closePrematurely
+            Just (JSON.encode v) `shouldBe` (JSON.encode <$> origJson)
         pure ()

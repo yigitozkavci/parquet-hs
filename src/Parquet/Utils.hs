@@ -11,6 +11,14 @@ import qualified Data.Text as T
 
 infixl 4 <??>
 
+failOnMay ::
+  ( Monad m,
+    MonadFail m
+  ) =>
+  Maybe a -> String -> m a
+failOnMay Nothing s = fail s
+failOnMay (Just a) s = pure a
+
 failOnExcept ::
   ( Monad m,
     MonadFail m

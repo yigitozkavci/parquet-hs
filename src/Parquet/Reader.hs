@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
@@ -6,11 +7,122 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 
+{-
+An example schema:
+
+[root] spark_schema: {
+  optional f1: {
+    repeated group list: {
+      optional element: {
+        repeated group list: {
+          optional int64 element = 1;
+        }
+      }
+    }
+  }
+  optional f2: {
+    repeated group list: {
+      optional int64 element = 2;
+    }
+  }
+  optional f3: {
+    repeated group list: {
+      optional int64 element = 3;
+    }
+  }
+  optional f4: {
+    repeated group list: {
+      optional int64 element = 4;
+    }
+  }
+  optional f5: {
+    repeated group list: {
+      optional int64 element = 5;
+    }
+  }
+  optional f6: {
+    repeated group list: {
+      optional int64 element = 6;
+    }
+  }
+}
+
+Then, the following column values:
+____________________________________________________________________
+            
+| rep_level | def_level | path                             | value |
+|___________|___________|__________________________________|_______|
+| 0         | 5         | f1, list, element, list, element | 1     |
+| 2         | 5         | f1, list, element, list, element | 2     |
+| 1         | 5         | f1, list, element, list, element | 3     |
+| 2         | 5         | f1, list, element, list, element | 4     |
+| 1         | 5         | f1, list, element, list, element | 5     |
+| 0         | 0         | f1, list, element, list, element | 1     |
+| 0         | 0         | f1, list, element, list, element | 2     |
+| 0         | 0         | f1, list, element, list, element | 3     |
+| 0         | 0         | f1, list, element, list, element | 2     |
+| 0         | 0         | f1, list, element, list, element | 3     |
+|___________|___________|__________________________________|_______|
+
+should produce the following data:
+Note: Values between "_" characters describe the accumulator we use during the recursion.
+
+== Value 1 ==
+_{}_
+> (r: 0, d: 5, v: 1, p: [f1, list, element, list, element])
+{f1: _?_} (f1's type is OPTIONAL)
+> (r: 0, d: 4, v: 1, p: [list, element, list, element])
+{f1: [_?_]} (list's type is REPEATED)
+> (r: 0, d: 3, v: 1, p: [element, list, element])
+{f1: [{ element: _?_ }]} (element's type is OPTIONAL)
+> (r: 0, d: 2, v: 1, p: [list, element])
+{f1: [{ element: [_?_] }]} (list's type is REPEATED)
+> (r: 0, d: 1, v: 1, p: [element])
+{f1: [{ element: [{ element: _?_ }] }]} (element's type is OPTIONAL)
+> (r: 0, d: 0, v: 1, p: [])
+{f1: [{ element: [{ element: 1}] }]}
+
+== Value 2 ==
+_{f1: [{ element: [{ element: 1 }] }]}_
+> (r: 2, d: 5, v: 2, p: [f1, list, element, list, element])
+(Note: f1 exists in the accumulator, so we use it.)
+{f1: _[{ element: [{ element: 1 }] }]_}
+> (r: 2, d: 4, v: 2, p: [list, element, list, element])
+(Note: since repetition level is non-zero, we use the last element in the list.)
+{f1: [_{ element: [{ element: 1 }] }_]}
+> (r: 1, d: 3, v: 2, p: [element, list, element])
+{f1: [{ element: _[{ element: 1 }]_ }]}
+> (r: 1, d: 2, v: 2, p: [list, element])
+(Note: repetition level is 1 and we see a REPEATED type. Create a new element.)
+(NOTE(yigitozkavci): Is this an edge case or am I not smart enough? Probably the latter.)
+{f1: [{ element: [{ element: 1 }, _{}_] }]}
+> (r: 0, d: 1, v: 2, p: [element])
+{f1: [{ element: [{ element: 1 }, { element: _?_ }] }]}
+> (r: 0, d: 0, v: 2, p: [])
+{f1: [{ element: [{ element: 1 }, { element: 2 }] }]}
+
+== Value 3 ==
+_{f1: [{ element: [{ element: 1 }, { element: 2 }] }]}_
+> (r: 1, d: 5, v: 3, p: [f1, list, element, list, element])
+{f1: _[{ element: [{ element: 1 }, { element: 2 }] }]_}
+> (r: 1, d: 4, v: 3, p: [list, element, list, element])
+{f1: [{ element: [{ element: 1 }, { element: 2 }] }, _{}_]}
+> (r: 0, d: 3, v: 3, p: [element, list, element])
+{f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: _?_}]}
+> (r: 0, d: 2, v: 3, p: [list, element])
+(Note: repetition level is 0 and the type is REPEATED, so create a new list.)
+{f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [_?_]}]}
+> (r: 0, d: 1, v: 3, p: [element])
+{f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [{ element: _?_ }]}]}
+> (r: 0, d: 0, v: 3, p: [])
+{f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [{ element: 3 }]}]}
+
+-}
 module Parquet.Reader where
 
+import Control.Monad.State (MonadState, execState, get, put)
 import qualified Conduit as C
 import Control.Arrow ((&&&))
 import Control.Lens hiding (ix)
@@ -47,13 +159,16 @@ import Parquet.Stream.Reader
     readColumnChunk,
   )
 import qualified Parquet.ThriftTypes as TT
-import Parquet.Utils (failOnExcept)
+import Parquet.Utils (failOnExcept, failOnMay)
 import System.IO
   ( IOMode (ReadMode),
     SeekMode (AbsoluteSeek, SeekFromEnd),
     hSeek,
     openFile,
   )
+import Text.Pretty.Simple (pString)
+import qualified Data.Text.Lazy as LT
+import Safe (headMay)
 
 newtype ParquetSource m = ParquetSource (Integer -> C.ConduitT () BS.ByteString m ())
 
@@ -183,25 +298,44 @@ initColumnState = ParquetObject $ MkParquetObject mempty
 -- In a parquet column, a repetition level of 0 denotes start of a new record.
 -- Example:
 --
--- ________________________________________________________
-
--- | rep_level | path                             | value |
--- |___________|__________________________________|_______|
--- | 0         | f1, list, element, list, element | 1     |
--- | 2         | f1, list, element, list, element | 2     |
--- | 1         | f1, list, element, list, element | 3     |
--- | 2         | f1, list, element, list, element | 4     |
--- | 1         | f1, list, element, list, element | 4     |
--- | 0         | f1, list, element, list, element | 1     |
--- | 2         | f1, list, element, list, element | 2     |
--- | 2         | f1, list, element, list, element | 3     |
--- |___________|__________________________________|_______|
+-- For the following json:
 --
--- Consuming the stream above will yield the following two @ColumnConstructor@s:
+-- [
+--   { "f1": [[1, 2], [3, 4], [5]]
+--   },
+--   { "f2": [1, 2, 3]
+--   },
+--   { "f3": [1, 2, 3]
+--   },
+--   { "f4": [1, 2, 3]
+--   },
+--   { "f5": [1, 2, 3]
+--   },
+--   { "f6": [1, 2, 3]
+--   }
+-- ]
+-- 
+-- Values look like the following:
+-- ____________________________________________________________________
+               
+-- | rep_level | def_level | path                             | value |
+-- |___________|___________|__________________________________|_______|
+-- | 0         | 5         | f1, list, element, list, element | 1     |
+-- | 2         | 5         | f1, list, element, list, element | 2     |
+-- | 1         | 5         | f1, list, element, list, element | 3     |
+-- | 2         | 5         | f1, list, element, list, element | 4     |
+-- | 1         | 5         | f1, list, element, list, element | 5     |
+-- | 0         | 0         | f1, list, element, list, element | 1     |
+-- | 0         | 0         | f1, list, element, list, element | 2     |
+-- | 0         | 0         | f1, list, element, list, element | 3     |
+-- | 0         | 0         | f1, list, element, list, element | 2     |
+-- | 0         | 0         | f1, list, element, list, element | 3     |
+-- |___________|___________|__________________________________|_______|
+--
+-- Consuming the stream above will yield the following @ColumnConstructor@s:
 --
 -- ___________________________________
 -- | { "f1": [[1, 2], [3, 4], [5]] } |
--- | { "f1": [[1, 2, 3]]           } |
 -- |_________________________________|
 generateInstructions ::
   forall m.
@@ -268,7 +402,7 @@ mkInstructions = go 1
   where
     go currListLevel c = do
       logInfo $ "Creating instruction for column value: " <> T.pack (show c)
-      case c of
+      instrx <- case c of
         (ColumnValue _ 0 _ v, []) -> pure $ Just $ Seq.singleton $ IValue v
         (ColumnValue {}, []) ->
           Nothing
@@ -303,6 +437,8 @@ mkInstructions = go 1
                 currListLevel
                 (ColumnValue r (d - 1) md v, restPath)
             pure $ (IObjectField fieldName Seq.<|) <$> mb_rest_instructions
+      logInfo $ "Instruction set: " <> T.pack (show instrx)
+      pure instrx
 
 newtype ColumnConstructor = ColumnConstructor
   { ccInstrSet :: Seq.Seq InstructionSet
@@ -338,7 +474,7 @@ sourceRowGroup ::
   TT.RowGroup ->
   C.ConduitT () ParquetValue m ()
 sourceRowGroup source rg = do
-  logInfo "Parsing new row group."
+  logInfo $ "Parsing new row group. Metadata: " <> LT.toStrict (pString (show rg))
   C.sequenceSources
     ( map
         ( \cc ->
@@ -464,13 +600,32 @@ interpretInstructions parquetVal is = do
             "Cannot apply IObjectField instruction on parquet value "
               <> T.pack (show v)
 
+mkSchemaMapping :: [TT.SchemaElement] -> M.Map T.Text TT.SchemaElement
+mkSchemaMapping schema = snd $ execState (go "") (schema, M.empty)
+  where
+    go
+      :: MonadState ([TT.SchemaElement], M.Map T.Text TT.SchemaElement) m
+      => T.Text
+      -> m ()
+    go prefix = do
+      get >>= \case
+        ([], _) -> pure ()
+        (schema_element : rest, mapping) -> do
+          let mb_num_children = schema_element ^. TT.pinchField @"num_children"
+          let name = schema_element ^. TT.pinchField @"name"
+          case mb_num_children of
+            Nothing -> do
+              put (rest, M.insert (prefix <> name) schema_element mapping)
+            Just num_children -> do
+              put (rest, M.insert (prefix <> name) schema_element mapping)
+              replicateM_ (fromIntegral num_children) (go (prefix <> name <> "."))
+
 sourceColumnChunk ::
   ( MonadReader TT.FileMetadata m,
     C.MonadIO m,
     C.MonadResource m,
     C.MonadThrow m,
     MonadLogger m,
-    MonadReader TT.FileMetadata m,
     MonadFail m
   ) =>
   ParquetSource m ->
@@ -478,11 +633,10 @@ sourceColumnChunk ::
   C.ConduitT () ColumnValue m ()
 sourceColumnChunk (ParquetSource source) cc = do
   metadata <- ask
-  let schema_mapping =
-        M.fromList $
-          map ((^. TT.pinchField @"name") &&& id) $
-            metadata
-              ^. TT.pinchField @"schema"
+  let schema_mapping = mkSchemaMapping (metadata ^. TT.pinchField @"schema")
   let offset = cc ^. TT.pinchField @"file_offset"
+  logInfo $ "Schema 1: " <> LT.toStrict (pString $ show schema_mapping)
+  logInfo $ "Schema 2: " <> LT.toStrict (pString $ show (metadata ^. TT.pinchField @"schema"))
+  root <- headMay (metadata ^. TT.pinchField @"schema") `failOnMay` "Schema cannot be empty"
   source (fromIntegral offset)
-    C..| C.transPipe failOnExcept (readColumnChunk schema_mapping cc)
+    C..| C.transPipe failOnExcept (readColumnChunk root schema_mapping cc)

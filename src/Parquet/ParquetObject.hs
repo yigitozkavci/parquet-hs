@@ -6,6 +6,7 @@
 
 module Parquet.ParquetObject where
 
+import qualified Data.Vector as V
 import Codec.Serialise (Serialise)
 import Control.Lens
 import qualified Data.Aeson as JSON
@@ -16,6 +17,7 @@ import Data.Int (Int64)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import GHC.Generics (Generic)
+import Data.Ratio
 
 newtype ParquetObject = MkParquetObject (HM.HashMap T.Text ParquetValue)
   deriving (Eq, Show, Generic, Serialise)
@@ -54,9 +56,23 @@ data ParquetValue
   | ParquetList !ParquetList
   | ParquetInt !Int64
   | ParquetString !BS.ByteString
+  | ParquetBool !Bool
   | ParquetNull
   | EmptyValue
   deriving (Eq, Show, Generic, Binary, Serialise)
+
+instance JSON.FromJSON ParquetValue where
+  parseJSON = \case
+    JSON.Object obj -> do
+      ParquetObject . MkParquetObject <$> traverse JSON.parseJSON obj
+    JSON.Array vec -> do
+      ParquetList . MkParquetList . V.toList <$> traverse JSON.parseJSON vec
+    JSON.Number sci ->
+      pure $ ParquetInt $ fromInteger $ numerator $ toRational sci
+    JSON.String s ->
+      pure $ ParquetString $ T.encodeUtf8 s
+    JSON.Bool b -> pure $ ParquetBool b
+    JSON.Null -> pure ParquetNull
 
 instance JSON.ToJSON ParquetValue where
   toJSON = \case
@@ -66,6 +82,7 @@ instance JSON.ToJSON ParquetValue where
     ParquetString bs -> case T.decodeUtf8' bs of
       Right t -> JSON.String t
       Left _ -> JSON.String "<non-utf8-string>"
+    ParquetBool b -> JSON.Bool b
     ParquetNull -> JSON.Null
     EmptyValue -> JSON.Null
 

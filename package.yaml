@@ -45,6 +45,8 @@ library:
   - http-conduit
   - http-client
   - http-types
+  - vector
+  - pretty-simple
 
 tests:
   parquet-hs-unit:
@@ -80,3 +82,4 @@ tests:
     - text
     - conduit
     - monad-logger
+    - pretty-simple
