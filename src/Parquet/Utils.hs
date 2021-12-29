@@ -17,7 +17,7 @@ failOnMay ::
   ) =>
   Maybe a -> String -> m a
 failOnMay Nothing s = fail s
-failOnMay (Just a) s = pure a
+failOnMay (Just a) _ = pure a
 
 failOnExcept ::
   ( Monad m,

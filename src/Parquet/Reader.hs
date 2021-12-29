@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -72,51 +74,69 @@ Note: Values between "_" characters describe the accumulator we use during the r
 == Value 1 ==
 _{}_
 > (r: 0, d: 5, v: 1, p: [f1, list, element, list, element])
+instruction: IObjectField "f1"
 {f1: _?_} (f1's type is OPTIONAL)
 > (r: 0, d: 4, v: 1, p: [list, element, list, element])
+instruction: NewList
 {f1: [_?_]} (list's type is REPEATED)
 > (r: 0, d: 3, v: 1, p: [element, list, element])
+instruction: IObjectField "element"
 {f1: [{ element: _?_ }]} (element's type is OPTIONAL)
 > (r: 0, d: 2, v: 1, p: [list, element])
+instruction: NewList
 {f1: [{ element: [_?_] }]} (list's type is REPEATED)
 > (r: 0, d: 1, v: 1, p: [element])
+instruction: IObjectField "element"
 {f1: [{ element: [{ element: _?_ }] }]} (element's type is OPTIONAL)
 > (r: 0, d: 0, v: 1, p: [])
+instruction: IValue 1
 {f1: [{ element: [{ element: 1}] }]}
 
 == Value 2 ==
 _{f1: [{ element: [{ element: 1 }] }]}_
 > (r: 2, d: 5, v: 2, p: [f1, list, element, list, element])
+instruction: IObjectField "f1"
 (Note: f1 exists in the accumulator, so we use it.)
 {f1: _[{ element: [{ element: 1 }] }]_}
 > (r: 2, d: 4, v: 2, p: [list, element, list, element])
+instruction: IListElement
 (Note: since repetition level is non-zero, we use the last element in the list.)
 {f1: [_{ element: [{ element: 1 }] }_]}
 > (r: 1, d: 3, v: 2, p: [element, list, element])
+instruction: IObjectField "element"
 {f1: [{ element: _[{ element: 1 }]_ }]}
 > (r: 1, d: 2, v: 2, p: [list, element])
+instruction: INewListElement
 (Note: repetition level is 1 and we see a REPEATED type. Create a new element.)
 (NOTE(yigitozkavci): Is this an edge case or am I not smart enough? Probably the latter.)
 {f1: [{ element: [{ element: 1 }, _{}_] }]}
 > (r: 0, d: 1, v: 2, p: [element])
+instruction: IObjectField "element"
 {f1: [{ element: [{ element: 1 }, { element: _?_ }] }]}
 > (r: 0, d: 0, v: 2, p: [])
+instruction: IValue 2
 {f1: [{ element: [{ element: 1 }, { element: 2 }] }]}
 
 == Value 3 ==
 _{f1: [{ element: [{ element: 1 }, { element: 2 }] }]}_
 > (r: 1, d: 5, v: 3, p: [f1, list, element, list, element])
+instruction: IObjectField "f1"
 {f1: _[{ element: [{ element: 1 }, { element: 2 }] }]_}
 > (r: 1, d: 4, v: 3, p: [list, element, list, element])
+instruction: INewListElement
 {f1: [{ element: [{ element: 1 }, { element: 2 }] }, _{}_]}
 > (r: 0, d: 3, v: 3, p: [element, list, element])
+instruction: IObjectField "element"
 {f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: _?_}]}
 > (r: 0, d: 2, v: 3, p: [list, element])
+instruction: INewList
 (Note: repetition level is 0 and the type is REPEATED, so create a new list.)
 {f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [_?_]}]}
 > (r: 0, d: 1, v: 3, p: [element])
+instruction: IObjectField "element"
 {f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [{ element: _?_ }]}]}
 > (r: 0, d: 0, v: 3, p: [])
+instruction: IValue 3
 {f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [{ element: 3 }]}]}
 
 -}
@@ -124,7 +144,6 @@ module Parquet.Reader where
 
 import Control.Monad.State (MonadState, execState, get, put)
 import qualified Conduit as C
-import Control.Arrow ((&&&))
 import Control.Lens hiding (ix)
 import Control.Monad.Except
 import Control.Monad.Logger (MonadLogger, runNoLoggingT)
@@ -252,7 +271,16 @@ readWholeParquetFile inputFp = do
       traverse_
         (sourceRowGroup (localParquetFile inputFp))
         (metadata ^. TT.pinchField @"row_groups")
-        C..| CL.consume
+        C..| CL.map convertLiteralJsonLists C..| CL.consume
+
+convertLiteralJsonLists :: ParquetValue -> ParquetValue
+convertLiteralJsonLists (ParquetObject (MkParquetObject (HM.toList -> [("element", parquetValue)]))) =
+  convertLiteralJsonLists parquetValue
+convertLiteralJsonLists (ParquetObject (MkParquetObject kvMapping)) =
+ ParquetObject $ MkParquetObject $ convertLiteralJsonLists <$> kvMapping
+convertLiteralJsonLists (ParquetList (MkParquetList xs)) =
+  ParquetList $ MkParquetList $ map convertLiteralJsonLists xs
+convertLiteralJsonLists v = v
 
 type Record = [(ColumnValue, [T.Text])]
 
@@ -291,7 +319,7 @@ throwOnNothing err Nothing = throwError err
 throwOnNothing _ (Just v) = pure v
 
 initColumnState :: ParquetValue
-initColumnState = ParquetObject $ MkParquetObject mempty
+initColumnState = EmptyValue
 
 -- Instruction generator for a single column.
 --
@@ -343,6 +371,7 @@ generateInstructions ::
     C.MonadIO m,
     C.MonadThrow m,
     MonadLogger m,
+    MonadFail m,
     MonadReader TT.FileMetadata m
   ) =>
   C.ConduitT (ColumnValue, [T.Text]) ColumnConstructor m ()
@@ -376,6 +405,43 @@ generateInstructions = loop Seq.empty
         Nothing -> logError "Could not create instructions: "
         Just is -> loop (ix Seq.|> is)
 
+readSchemaMapping
+  :: MonadReader TT.FileMetadata m
+  => m (M.Map T.Text TT.SchemaElement)
+readSchemaMapping = do
+  metadata <- ask
+  pure $ mk_schema_mapping $ metadata ^. TT.pinchField @"schema"
+  where
+    mk_schema_mapping :: [TT.SchemaElement] -> M.Map T.Text TT.SchemaElement
+    mk_schema_mapping schema = snd $ execState (go mempty) (schema, mempty)
+
+    go
+      :: MonadState ([TT.SchemaElement], M.Map T.Text TT.SchemaElement) m
+      => T.Text
+      -> m ()
+    go prefix = do
+      get >>= \case
+        ([], _) -> pure ()
+        (schema_element : rest, schema_mapping) -> do
+          let mb_num_children = schema_element ^. TT.pinchField @"num_children"
+          let name = schema_element ^. TT.pinchField @"name"
+          case mb_num_children of
+            Nothing -> do
+              put (rest, M.insert (prefix <> name) schema_element schema_mapping)
+            Just num_children -> do
+              put (rest, M.insert (prefix <> name) schema_element schema_mapping)
+              replicateM_ (fromIntegral num_children) (go (prefix <> name <> "."))
+
+
+findSchemaElement
+  :: (MonadReader TT.FileMetadata m, MonadFail m)
+  => T.Text
+  -> m (Maybe TT.SchemaElement)
+findSchemaElement path = do
+  schema_mapping <- readSchemaMapping
+  schema_root <- readSchemaRoot
+  pure $ M.lookup (schema_root ^. TT.pinchField @"name" <> "." <> path) schema_mapping
+
 -- | Given a single column, generates instructions for how to build an object with that column.
 --
 -- For example, for the following column:
@@ -390,54 +456,80 @@ generateInstructions = loop Seq.empty
 -- https://blog.twitter.com/engineering/en_us/a/2013/dremel-made-simple-with-parquet.html
 mkInstructions ::
   forall m.
-  ( C.MonadResource m,
-    C.MonadIO m,
+  ( C.MonadIO m,
     C.MonadThrow m,
     MonadLogger m,
-    MonadReader TT.FileMetadata m
+    MonadReader TT.FileMetadata m,
+    MonadFail m
   ) =>
   (ColumnValue, [T.Text]) ->
   m (Maybe InstructionSet)
-mkInstructions = go 1
+mkInstructions (c, path) = do
+  logInfo $ "Creating instruction for column value: " <> T.pack (show c) <> " and path " <> T.intercalate "." path
+  result <- go [] (c, path)
+  logInfo $ "Instruction set: " <> T.pack (show result)
+  pure result
   where
-    go currListLevel c = do
-      logInfo $ "Creating instruction for column value: " <> T.pack (show c)
-      instrx <- case c of
+    go :: [T.Text] -> (ColumnValue, [T.Text]) -> m (Maybe InstructionSet)
+    go pathSoFar columnValue = do
+      schema_mapping <- readSchemaMapping
+      schema_root <- readSchemaRoot
+      instrx <- case columnValue of
+        (ColumnValue r d md v, fieldName : restPath) -> do
+          let fullPathSoFar = T.intercalate "." $ pathSoFar <> [fieldName]
+          case M.lookup (schema_root ^. TT.pinchField @"name" <> "." <> fullPathSoFar) schema_mapping of
+            Nothing -> Nothing <$ logWarn ("Couldn't find the schema element for path " <> fullPathSoFar)
+            Just schema_element ->
+              case schema_element ^. TT.pinchField @"repetition_type" of
+                Nothing ->
+                  Nothing <$ logError ("Path doesn't have a repetition type: " <> fullPathSoFar)
+                Just (TT.REQUIRED _)
+                  | d == 0 ->
+                    Nothing <$ logError ("Found a REQUIRED schema element while definition level is 0: " <> fullPathSoFar)
+                  | otherwise -> do
+                    mb_rest_instructions <-
+                      go
+                        (pathSoFar <> [fieldName])
+                        (ColumnValue r d md v, restPath)
+                    pure $ (IObjectField fieldName Seq.<|) <$> mb_rest_instructions
+                Just (TT.OPTIONAL _)
+                  | d == 0 ->
+                    case pathSoFar of
+                      [] -> 
+                        pure $ Just $ Seq.singleton INullOpt
+                      _ -> 
+                        pure $ Just $ Seq.singleton (IValue Null)
+                  | otherwise -> do
+                    mb_rest_instructions <-
+                      go
+                        (pathSoFar <> [fieldName])
+                        (ColumnValue r (d - 1) md v, restPath)
+                    pure $ (IObjectField fieldName Seq.<|) <$> mb_rest_instructions
+                Just (TT.REPEATED _)
+                  | d == 0 ->
+                    Nothing <$ logError ("Found a REPEATED schema element while definition level is 0: " <> fullPathSoFar)
+                  | r == 0 -> do
+                    mb_rest_instructions <-
+                      go
+                        (pathSoFar <> [fieldName])
+                        (ColumnValue r (d - 1) md v, restPath)
+                    pure $ (INewList Seq.<|) <$> mb_rest_instructions
+                  | r == 1 -> do
+                    mb_rest_instructions <-
+                      go
+                        (pathSoFar <> [fieldName])
+                        (ColumnValue (r - 1) (d - 1) md v, restPath)
+                    pure $ (INewListElement Seq.<|) <$> mb_rest_instructions
+                  | otherwise -> do
+                    mb_rest_instructions <-
+                      go
+                        (pathSoFar <> [fieldName])
+                        (ColumnValue (r - 1) (d - 1) md v, restPath)
+                    pure $ (IListElement Seq.<|) <$> mb_rest_instructions
         (ColumnValue _ 0 _ v, []) -> pure $ Just $ Seq.singleton $ IValue v
         (ColumnValue {}, []) ->
           Nothing
             <$ logWarn "Saw column with nonzero rep/def levels and empty path."
-        (ColumnValue r d md v, "list" : "element" : restPath)
-          | d == 0 -> do
-            when (v /= Null) $
-              logWarn
-                "Definition level is zero, path is nonempty but we have a non-null value."
-            pure $ Just $ Seq.singleton INullList
-          | r == 0 || currListLevel >= r -> do
-            mb_rest_instructions <-
-              go
-                (currListLevel + 1)
-                (ColumnValue r (d - 2) md v, restPath)
-            pure $ (INewList Seq.<|) <$> mb_rest_instructions
-          | otherwise -> do
-            mb_rest_instructions <-
-              go
-                (currListLevel + 1)
-                (ColumnValue r (d - 2) md v, restPath)
-            pure $ (IListElement Seq.<|) <$> mb_rest_instructions
-        (ColumnValue r d md v, fieldName : restPath)
-          | d == 0 -> do
-            when (v /= Null) $
-              logWarn
-                "Definition level is zero, path is nonempty but we have a non-null value."
-            pure $ Just $ IObjectField fieldName Seq.<| Seq.singleton INullObject
-          | otherwise -> do
-            mb_rest_instructions <-
-              go
-                currListLevel
-                (ColumnValue r (d - 1) md v, restPath)
-            pure $ (IObjectField fieldName Seq.<|) <$> mb_rest_instructions
-      logInfo $ "Instruction set: " <> T.pack (show instrx)
       pure instrx
 
 newtype ColumnConstructor = ColumnConstructor
@@ -517,9 +609,9 @@ data Instruction
   = IValue Value
   | IListElement
   | INewList
-  | INullList
-  | INullObject
+  | INullOpt
   | IObjectField T.Text
+  | INewListElement
   deriving (Eq, Show)
 
 -- | Traverses through given instruction list and changes the given ParquetValue accordingly.
@@ -530,13 +622,6 @@ data Instruction
 --
 -- Returns;
 -- { "f1": [[1]] }
---
--- Given;
--- Value: { "f1": [[1]] }
--- Instruction Set: [IObjectField "f1",IListElement,INewList,IValue (ValueInt64 2)]
---
--- Returns;
--- { "f1": [[1, 2]] }
 interpretInstructions ::
   (MonadLogger m, MonadError T.Text m) =>
   ParquetValue ->
@@ -549,14 +634,20 @@ interpretInstructions parquetVal is = do
       <> ", "
       <> T.pack (show is)
   case (parquetVal, is) of
-    (EmptyValue, Seq.Empty) ->
-      throwError "Could not generate a parquet value with given instructions."
+    (EmptyValue, Seq.Empty) -> pure parquetVal
     (ParquetNull, _) -> pure ParquetNull
     (pv, Seq.Empty) -> pure pv
     (pv, i Seq.:<| ix) -> case i of
       IValue val -> pure $ valueToParquetValue val
-      INullList -> pure $ ParquetList $ MkParquetList []
-      INullObject -> pure $ ParquetObject $ MkParquetObject $ HM.fromList []
+      INewListElement -> case pv of
+        ParquetList (MkParquetList xs) -> do
+          newValueIntoTheList <- interpretInstructions EmptyValue ix
+          pure $ ParquetList $ MkParquetList $ xs <> [newValueIntoTheList]
+        v ->
+          throwError $
+            "Wrong parquet value "
+              <> T.pack (show v)
+              <> " type for instruction IListElement"
       IListElement -> case pv of
         ParquetList (MkParquetList xs) -> case reverse xs of
           (revX : revXs) -> do
@@ -580,6 +671,7 @@ interpretInstructions parquetVal is = do
             "Wrong parquet value "
               <> T.pack (show v)
               <> " type for instruction INewList"
+      INullOpt -> interpretInstructions pv ix
       IObjectField fieldName -> case pv of
         EmptyValue -> do
           val <- interpretInstructions EmptyValue ix
@@ -600,25 +692,10 @@ interpretInstructions parquetVal is = do
             "Cannot apply IObjectField instruction on parquet value "
               <> T.pack (show v)
 
-mkSchemaMapping :: [TT.SchemaElement] -> M.Map T.Text TT.SchemaElement
-mkSchemaMapping schema = snd $ execState (go "") (schema, M.empty)
-  where
-    go
-      :: MonadState ([TT.SchemaElement], M.Map T.Text TT.SchemaElement) m
-      => T.Text
-      -> m ()
-    go prefix = do
-      get >>= \case
-        ([], _) -> pure ()
-        (schema_element : rest, mapping) -> do
-          let mb_num_children = schema_element ^. TT.pinchField @"num_children"
-          let name = schema_element ^. TT.pinchField @"name"
-          case mb_num_children of
-            Nothing -> do
-              put (rest, M.insert (prefix <> name) schema_element mapping)
-            Just num_children -> do
-              put (rest, M.insert (prefix <> name) schema_element mapping)
-              replicateM_ (fromIntegral num_children) (go (prefix <> name <> "."))
+readSchemaRoot :: (MonadReader TT.FileMetadata m, MonadFail m) => m TT.SchemaElement
+readSchemaRoot = do
+  metadata <- ask
+  headMay (metadata ^. TT.pinchField @"schema") `failOnMay` "Schema cannot be empty"
 
 sourceColumnChunk ::
   ( MonadReader TT.FileMetadata m,
@@ -633,10 +710,10 @@ sourceColumnChunk ::
   C.ConduitT () ColumnValue m ()
 sourceColumnChunk (ParquetSource source) cc = do
   metadata <- ask
-  let schema_mapping = mkSchemaMapping (metadata ^. TT.pinchField @"schema")
+  schema_mapping <- readSchemaMapping
   let offset = cc ^. TT.pinchField @"file_offset"
   logInfo $ "Schema 1: " <> LT.toStrict (pString $ show schema_mapping)
   logInfo $ "Schema 2: " <> LT.toStrict (pString $ show (metadata ^. TT.pinchField @"schema"))
-  root <- headMay (metadata ^. TT.pinchField @"schema") `failOnMay` "Schema cannot be empty"
+  root <- readSchemaRoot
   source (fromIntegral offset)
     C..| C.transPipe failOnExcept (readColumnChunk root schema_mapping cc)
