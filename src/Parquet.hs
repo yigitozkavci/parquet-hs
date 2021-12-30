@@ -1,4 +1,4 @@
-module Main where
+module Parquet where
 
 import qualified Conduit as C
 import Control.Monad.Except

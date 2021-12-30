@@ -21,7 +21,7 @@ extra-source-files:
 
 library
   exposed-modules:
-      Main
+      Parquet
       Parquet.Decoder
       Parquet.Monad
       Parquet.ParquetObject
