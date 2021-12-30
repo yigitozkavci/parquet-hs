@@ -11,8 +11,16 @@ license: BSD3
 ghc-options: -Wall -O2 -fspecialise-aggressively
 
 default-extensions:
+  - DataKinds
+  - DeriveAnyClass
+  - DeriveGeneric
+  - FlexibleContexts
   - OverloadedStrings
   - LambdaCase
+  - ScopedTypeVariables
+  - TypeApplications
+  - TypeOperators
+  - TypeFamilies
 
 extra-source-files:
   - ChangeLog.md

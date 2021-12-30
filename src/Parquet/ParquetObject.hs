@@ -6,7 +6,6 @@
 
 module Parquet.ParquetObject where
 
-import qualified Data.Vector as V
 import Codec.Serialise (Serialise)
 import Control.Lens
 import qualified Data.Aeson as JSON
@@ -14,10 +13,11 @@ import Data.Binary (Binary (..))
 import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as HM
 import Data.Int (Int64)
+import Data.Ratio
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import qualified Data.Vector as V
 import GHC.Generics (Generic)
-import Data.Ratio
 
 newtype ParquetObject = MkParquetObject (HM.HashMap T.Text ParquetValue)
   deriving (Eq, Show, Generic, Serialise)

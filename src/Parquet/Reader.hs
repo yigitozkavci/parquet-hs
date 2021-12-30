@@ -1,12 +1,4 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
 {-
@@ -51,7 +43,7 @@ An example schema:
 
 Then, the following column values:
 ____________________________________________________________________
-            
+
 | rep_level | def_level | path                             | value |
 |___________|___________|__________________________________|_______|
 | 0         | 5         | f1, list, element, list, element | 1     |
@@ -122,14 +114,13 @@ _{f1: [{ element: [{ element: 1 }, { element: 2 }] }]}_
 -}
 module Parquet.Reader where
 
-import Control.Monad.State (MonadState, execState, get, put)
 import qualified Conduit as C
-import Control.Arrow ((&&&))
 import Control.Lens hiding (ix)
 import Control.Monad.Except
 import Control.Monad.Logger (MonadLogger, runNoLoggingT)
 import Control.Monad.Logger.CallStack (logError, logInfo, logWarn)
 import Control.Monad.Reader (MonadReader, ask, runReaderT)
+import Control.Monad.State (MonadState, execState, get, put)
 import qualified Data.Binary.Get as BG
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
@@ -141,6 +132,7 @@ import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
 import qualified Data.Sequence as Seq
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as LT
 import Data.Traversable (for)
 import Network.HTTP.Client (Request (requestHeaders))
 import Network.HTTP.Simple
@@ -158,8 +150,9 @@ import Parquet.Stream.Reader
     decodeConduit,
     readColumnChunk,
   )
-import qualified Parquet.ThriftTypes as TT
+import qualified Parquet.Types as TT
 import Parquet.Utils (failOnExcept, failOnMay)
+import Safe (headMay)
 import System.IO
   ( IOMode (ReadMode),
     SeekMode (AbsoluteSeek, SeekFromEnd),
@@ -167,8 +160,6 @@ import System.IO
     openFile,
   )
 import Text.Pretty.Simple (pString)
-import qualified Data.Text.Lazy as LT
-import Safe (headMay)
 
 newtype ParquetSource m = ParquetSource (Integer -> C.ConduitT () BS.ByteString m ())
 
@@ -215,7 +206,9 @@ remoteParquetFile ::
     C.MonadThrow m,
     C.MonadIO m,
     MonadFail m
-  ) => Url -> ParquetSource m
+  ) =>
+  Url ->
+  ParquetSource m
 remoteParquetFile url = ParquetSource $ \pos -> do
   req <- parseRequest url
   let rangedReq = req {requestHeaders = mkRangeHeader pos : requestHeaders req}
@@ -314,10 +307,10 @@ initColumnState = ParquetObject $ MkParquetObject mempty
 --   { "f6": [1, 2, 3]
 --   }
 -- ]
--- 
+--
 -- Values look like the following:
 -- ____________________________________________________________________
-               
+
 -- | rep_level | def_level | path                             | value |
 -- |___________|___________|__________________________________|_______|
 -- | 0         | 5         | f1, list, element, list, element | 1     |
@@ -603,21 +596,21 @@ interpretInstructions parquetVal is = do
 mkSchemaMapping :: [TT.SchemaElement] -> M.Map T.Text TT.SchemaElement
 mkSchemaMapping schema = snd $ execState (go "") (schema, M.empty)
   where
-    go
-      :: MonadState ([TT.SchemaElement], M.Map T.Text TT.SchemaElement) m
-      => T.Text
-      -> m ()
+    go ::
+      MonadState ([TT.SchemaElement], M.Map T.Text TT.SchemaElement) m =>
+      T.Text ->
+      m ()
     go prefix = do
       get >>= \case
         ([], _) -> pure ()
-        (schema_element : rest, mapping) -> do
+        (schema_element : rest, mapping') -> do
           let mb_num_children = schema_element ^. TT.pinchField @"num_children"
           let name = schema_element ^. TT.pinchField @"name"
           case mb_num_children of
             Nothing -> do
-              put (rest, M.insert (prefix <> name) schema_element mapping)
+              put (rest, M.insert (prefix <> name) schema_element mapping')
             Just num_children -> do
-              put (rest, M.insert (prefix <> name) schema_element mapping)
+              put (rest, M.insert (prefix <> name) schema_element mapping')
               replicateM_ (fromIntegral num_children) (go (prefix <> name <> "."))
 
 sourceColumnChunk ::

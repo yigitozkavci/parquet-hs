@@ -15,15 +15,18 @@ failOnMay ::
   ( Monad m,
     MonadFail m
   ) =>
-  Maybe a -> String -> m a
+  Maybe a ->
+  String ->
+  m a
 failOnMay Nothing s = fail s
-failOnMay (Just a) s = pure a
+failOnMay (Just a) _ = pure a
 
 failOnExcept ::
   ( Monad m,
     MonadFail m
   ) =>
-  ExceptT T.Text m a -> m a
+  ExceptT T.Text m a ->
+  m a
 failOnExcept =
   runExceptT >=> \case
     Left err -> fail (T.unpack err)

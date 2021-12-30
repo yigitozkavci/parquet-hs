@@ -11,10 +11,10 @@ import Control.Monad.Except (runExceptT)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Logger
 import qualified Data.Aeson as JSON
-import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy.Char8 as LBS8
+import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.ByteString.Lazy.Char8 as LBS8
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as TextIO (putStrLn)

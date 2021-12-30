@@ -27,15 +27,40 @@ library
       Parquet.ParquetObject
       Parquet.Reader
       Parquet.Stream.Reader
-      Parquet.ThriftTypes
+      Parquet.Types
+      Parquet.Types.AesGcm
+      Parquet.Types.Column
+      Parquet.Types.Common
+      Parquet.Types.CompressionCodec
+      Parquet.Types.ConvertedType
+      Parquet.Types.Encoding
+      Parquet.Types.Encryption
+      Parquet.Types.FieldRepetitionType
+      Parquet.Types.FileMetadata
+      Parquet.Types.KeyValue
+      Parquet.Types.LogicalType
+      Parquet.Types.Page
+      Parquet.Types.RowGroup
+      Parquet.Types.SchemaElement
+      Parquet.Types.SortingColumn
+      Parquet.Types.Statistics
+      Parquet.Types.Thrift
       Parquet.Utils
   other-modules:
       Paths_parquet_hs
   hs-source-dirs:
       src
   default-extensions:
+      DataKinds
+      DeriveAnyClass
+      DeriveGeneric
+      FlexibleContexts
       OverloadedStrings
       LambdaCase
+      ScopedTypeVariables
+      TypeApplications
+      TypeOperators
+      TypeFamilies
   ghc-options: -Wall -O2 -fspecialise-aggressively -Wall
   build-depends:
       aeson
@@ -71,8 +96,16 @@ test-suite parquet-hs-integration
   hs-source-dirs:
       tests/integration
   default-extensions:
+      DataKinds
+      DeriveAnyClass
+      DeriveGeneric
+      FlexibleContexts
       OverloadedStrings
       LambdaCase
+      ScopedTypeVariables
+      TypeApplications
+      TypeOperators
+      TypeFamilies
   ghc-options: -Wall -O2 -fspecialise-aggressively -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
@@ -100,8 +133,16 @@ test-suite parquet-hs-unit
   hs-source-dirs:
       tests/unit
   default-extensions:
+      DataKinds
+      DeriveAnyClass
+      DeriveGeneric
+      FlexibleContexts
       OverloadedStrings
       LambdaCase
+      ScopedTypeVariables
+      TypeApplications
+      TypeOperators
+      TypeFamilies
   ghc-options: -Wall -O2 -fspecialise-aggressively -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
