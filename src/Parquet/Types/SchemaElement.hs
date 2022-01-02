@@ -1,7 +1,7 @@
 -- |
 module Parquet.Types.SchemaElement
   ( -- * Type definitions
-    SchemaElement
+    SchemaElement,
   )
 where
 

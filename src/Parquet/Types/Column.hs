@@ -3,7 +3,7 @@ module Parquet.Types.Column
   ( -- * Type definitions
     ColumnChunk,
     ColumnOrder,
-    ColumnMetaData (..)
+    ColumnMetaData (..),
   )
 where
 

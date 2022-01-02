@@ -1,7 +1,7 @@
 -- |
 module Parquet.Types.SortingColumn
   ( -- * Type definitions
-    SortingColumn
+    SortingColumn,
   )
 where
 

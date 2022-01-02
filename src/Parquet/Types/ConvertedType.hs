@@ -1,7 +1,7 @@
 -- |
 module Parquet.Types.ConvertedType
   ( -- * Type definitions
-    ConvertedType
+    ConvertedType,
   )
 where
 

@@ -12,75 +12,75 @@ import Parquet.Prelude
 ------------------------------------------------------------------------------
 
 -- |
-newtype ParquetObject = MkParquetObject (HashMap Text ParquetValue)
+newtype ParquetObject = ParquetObject (HashMap Text ParquetValue)
   deriving (Eq, Show, Generic, Serialise)
 
 instance Semigroup ParquetObject where
-  MkParquetObject hm1 <> MkParquetObject hm2 = MkParquetObject (hm1 <> hm2)
+  ParquetObject hm1 <> ParquetObject hm2 = ParquetObject (hm1 <> hm2)
 
 instance Monoid ParquetObject where
-  mempty = MkParquetObject mempty
+  mempty = ParquetObject mempty
 
 instance Binary ParquetObject where
-  put (MkParquetObject hm) = put (toList hm)
-  get = MkParquetObject . fromList <$> get
+  put (ParquetObject hm) = put (toList hm)
+  get = ParquetObject . fromList <$> get
 
 instance ToJSON ParquetObject where
-  toJSON (MkParquetObject obj) = toJSON obj
+  toJSON (ParquetObject obj) = toJSON obj
 
 ------------------------------------------------------------------------------
 
 -- |
-newtype ParquetList = MkParquetList [ParquetValue]
+newtype ParquetList = ParquetList [ParquetValue]
   deriving (Eq, Show, Generic, Serialise)
 
 instance Semigroup ParquetList where
-  MkParquetList l1 <> MkParquetList l2 = MkParquetList (l1 <> l2)
+  ParquetList l1 <> ParquetList l2 = ParquetList (l1 <> l2)
 
 instance Monoid ParquetList where
-  mempty = MkParquetList mempty
+  mempty = ParquetList mempty
 
 instance Binary ParquetList where
-  put (MkParquetList l) = put l
-  get = MkParquetList <$> get
+  put (ParquetList l) = put l
+  get = ParquetList <$> get
 
 instance ToJSON ParquetList where
-  toJSON (MkParquetList l) = toJSON l
+  toJSON (ParquetList l) = toJSON l
 
 ------------------------------------------------------------------------------
 
 -- |
 data ParquetValue
-  = ParquetObject !ParquetObject
-  | ParquetList !ParquetList
-  | ParquetInt !Int64
-  | ParquetString !ByteString
-  | ParquetBool !Bool
-  | ParquetNull
-  | EmptyValue
+  = ParquetValue_Object !ParquetObject
+  | ParquetValue_List !ParquetList
+  | ParquetValue_Int !Int64
+  | ParquetValue_String !ByteString
+  | ParquetValue_Bool !Bool
+  | ParquetValue_Null
+  | ParquetValue_Empty
   deriving (Eq, Show, Generic, Binary, Serialise)
 
 instance FromJSON ParquetValue where
   parseJSON = \case
     A.Object obj -> do
-      ParquetObject . MkParquetObject <$> traverse parseJSON obj
+      ParquetValue_Object . ParquetObject <$> traverse parseJSON obj
     A.Array vec -> do
-      ParquetList . MkParquetList . toList <$> traverse parseJSON vec
+      ParquetValue_List . ParquetList . toList <$> traverse parseJSON vec
     A.Number sci ->
-      pure $ ParquetInt $ fromInteger $ numerator $ toRational sci
+      pure $ ParquetValue_Int $ fromInteger $ numerator $ toRational sci
     A.String s ->
-      pure $ ParquetString $ encodeUtf8 s
-    A.Bool b -> pure $ ParquetBool b
-    A.Null -> pure ParquetNull
+      pure $ ParquetValue_String $ encodeUtf8 s
+    A.Bool b -> pure $ ParquetValue_Bool b
+    A.Null -> pure ParquetValue_Null
 
 instance ToJSON ParquetValue where
   toJSON = \case
-    ParquetObject obj -> toJSON obj
-    ParquetList l -> toJSON l
-    ParquetInt i64 -> A.Number (fromIntegral i64)
-    ParquetString bs -> case decodeUtf8' bs of
+    ParquetValue_Object obj -> toJSON obj
+    ParquetValue_List l -> toJSON l
+    ParquetValue_Int i64 -> A.Number (fromIntegral i64)
+    ParquetValue_String bs -> case decodeUtf8' bs of
       Right t -> A.String t
       Left _ -> A.String "<non-utf8-string>"
-    ParquetBool b -> A.Bool b
-    ParquetNull -> A.Null
-    EmptyValue -> A.Null
+    ParquetValue_Bool b -> A.Bool b
+    ParquetValue_Null -> A.Null
+    ParquetValue_Empty -> A.Null

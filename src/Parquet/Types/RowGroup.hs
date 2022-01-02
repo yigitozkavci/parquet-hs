@@ -1,6 +1,6 @@
 -- |
 module Parquet.Types.RowGroup
-  ( RowGroup
+  ( RowGroup,
   )
 where
 

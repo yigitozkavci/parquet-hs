@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- |
@@ -8,7 +9,7 @@ module Parquet.Types.Thrift
     pinchPos,
 
     -- *
-    unField
+    unField,
   )
 where
 

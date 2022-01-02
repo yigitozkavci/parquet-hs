@@ -1,7 +1,7 @@
 -- |
 module Parquet.Types.LogicalType
   ( -- * Type definitions
-    LogicalType
+    LogicalType,
   )
 where
 

@@ -172,14 +172,32 @@ import Text.Pretty.Simple (pString)
 newtype ParquetSource m
   = ParquetSource (Integer -> C.ConduitT () BS.ByteString m ())
 
+------------------------------------------------------------------------------
+
 -- |
 newtype ColumnConstructor = ColumnConstructor
   { ccInstrSet :: Seq.Seq InstructionSet
   }
   deriving (Eq, Show)
 
+------------------------------------------------------------------------------
+
 -- | TODO(dalp): Replace with `URI`.
 type Url = String
+
+------------------------------------------------------------------------------
+
+-- |
+data Instruction
+  = Instruction_IValue Value
+  | Instruction_IListElement
+  | Instruction_INewList
+  | Instruction_INullList
+  | Instruction_INullObject
+  | Instruction_IObjectField Text
+  deriving (Eq, Show)
+
+------------------------------------------------------------------------------
 
 -- |
 type InstructionSet = Seq.Seq Instruction
@@ -314,7 +332,7 @@ sourceRowGroupFromRemoteFile url rg = sourceRowGroup (remoteParquetFile url) rg
 
 -- |
 initColumnState :: ParquetValue
-initColumnState = ParquetObject $ MkParquetObject mempty
+initColumnState = ParquetValue_Object $ ParquetObject mempty
 
 ------------------------------------------------------------------------------
 
@@ -430,40 +448,40 @@ mkInstructions = go 1
     go currListLevel c = do
       logInfo $ "Creating instruction for column value: " <> pack (show c)
       instrx <- case c of
-        (ColumnValue _ 0 _ v, []) -> pure $ Just $ Seq.singleton $ IValue v
+        (ColumnValue _ 0 _ v, []) -> pure $ Just $ Seq.singleton $ Instruction_IValue v
         (ColumnValue {}, []) ->
           Nothing
             <$ logWarn "Saw column with nonzero rep/def levels and empty path."
         (ColumnValue r d md v, "list" : "element" : restPath)
           | d == 0 -> do
-            when (v /= Null) $
+            when (v /= Value_Null) $
               logWarn
                 "Definition level is zero, path is nonempty but we have a non-null value."
-            pure $ Just $ Seq.singleton INullList
+            pure $ Just $ Seq.singleton Instruction_INullList
           | r == 0 || currListLevel >= r -> do
             mb_rest_instructions <-
               go
                 (currListLevel + 1)
                 (ColumnValue r (d - 2) md v, restPath)
-            pure $ (INewList Seq.<|) <$> mb_rest_instructions
+            pure $ (Instruction_INewList Seq.<|) <$> mb_rest_instructions
           | otherwise -> do
             mb_rest_instructions <-
               go
                 (currListLevel + 1)
                 (ColumnValue r (d - 2) md v, restPath)
-            pure $ (IListElement Seq.<|) <$> mb_rest_instructions
+            pure $ (Instruction_IListElement Seq.<|) <$> mb_rest_instructions
         (ColumnValue r d md v, fieldName : restPath)
           | d == 0 -> do
-            when (v /= Null) $
+            when (v /= Value_Null) $
               logWarn
                 "Definition level is zero, path is nonempty but we have a non-null value."
-            pure $ Just $ IObjectField fieldName Seq.<| Seq.singleton INullObject
+            pure $ Just $ Instruction_IObjectField fieldName Seq.<| Seq.singleton Instruction_INullObject
           | otherwise -> do
             mb_rest_instructions <-
               go
                 currListLevel
                 (ColumnValue r (d - 1) md v, restPath)
-            pure $ (IObjectField fieldName Seq.<|) <$> mb_rest_instructions
+            pure $ (Instruction_IObjectField fieldName Seq.<|) <$> mb_rest_instructions
       logInfo $ "Instruction set: " <> pack (show instrx)
       pure instrx
 
@@ -526,7 +544,7 @@ sourceRowGroup source rg = do
     apply_instructions val instrSet =
       runExceptT (interpretInstructions val instrSet) >>= \case
         Left err ->
-          ParquetNull
+          ParquetValue_Null
             <$ logError ("Error while interpreting instructions: " <> err)
         Right newVal -> pure newVal
 
@@ -534,21 +552,10 @@ sourceRowGroup source rg = do
 
 -- |
 valueToParquetValue :: Value -> ParquetValue
-valueToParquetValue Null = ParquetNull
-valueToParquetValue (ValueInt64 v) = ParquetInt v
-valueToParquetValue (ValueByteString bs) = ParquetString bs
-
-------------------------------------------------------------------------------
-
--- |
-data Instruction
-  = IValue Value
-  | IListElement
-  | INewList
-  | INullList
-  | INullObject
-  | IObjectField Text
-  deriving (Eq, Show)
+valueToParquetValue = \case
+  Value_Null -> ParquetValue_Null
+  Value_Int64 v -> ParquetValue_Int v
+  Value_ByteString bs -> ParquetValue_String bs
 
 ------------------------------------------------------------------------------
 
@@ -579,52 +586,52 @@ interpretInstructions parquetVal is = do
       <> ", "
       <> pack (show is)
   case (parquetVal, is) of
-    (EmptyValue, Seq.Empty) ->
+    (ParquetValue_Empty, Seq.Empty) ->
       throwError "Could not generate a parquet value with given instructions."
-    (ParquetNull, _) -> pure ParquetNull
+    (ParquetValue_Null, _) -> pure ParquetValue_Null
     (pv, Seq.Empty) -> pure pv
     (pv, i Seq.:<| ix) -> case i of
-      IValue val -> pure $ valueToParquetValue val
-      INullList -> pure $ ParquetList $ MkParquetList []
-      INullObject -> pure $ ParquetObject $ MkParquetObject $ fromList []
-      IListElement -> case pv of
-        ParquetList (MkParquetList xs) -> case reverse xs of
+      Instruction_IValue val -> pure $ valueToParquetValue val
+      Instruction_INullList -> pure $ ParquetValue_List $ ParquetList []
+      Instruction_INullObject -> pure $ ParquetValue_Object $ ParquetObject $ fromList []
+      Instruction_IListElement -> case pv of
+        ParquetValue_List (ParquetList xs) -> case reverse xs of
           (revX : revXs) -> do
             newRevX <- interpretInstructions revX ix
-            pure $ ParquetList $ MkParquetList $ reverse $ newRevX : revXs
+            pure $ ParquetValue_List $ ParquetList $ reverse $ newRevX : revXs
           _ -> throwError "List is empty for NestedListElement instruction"
         v ->
           throwError $
             "Wrong parquet value "
               <> pack (show v)
               <> " type for instruction IListElement"
-      INewList -> case pv of
-        EmptyValue -> do
-          newX <- interpretInstructions EmptyValue ix
-          pure $ ParquetList $ MkParquetList [newX]
-        ParquetList (MkParquetList xs) -> do
-          newX <- interpretInstructions EmptyValue ix
-          pure $ ParquetList $ MkParquetList $ xs <> [newX]
+      Instruction_INewList -> case pv of
+        ParquetValue_Empty -> do
+          newX <- interpretInstructions ParquetValue_Empty ix
+          pure $ ParquetValue_List $ ParquetList [newX]
+        ParquetValue_List (ParquetList xs) -> do
+          newX <- interpretInstructions ParquetValue_Empty ix
+          pure $ ParquetValue_List $ ParquetList $ xs <> [newX]
         v ->
           throwError $
             "Wrong parquet value "
               <> pack (show v)
               <> " type for instruction INewList"
-      IObjectField fieldName -> case pv of
-        EmptyValue -> do
-          val <- interpretInstructions EmptyValue ix
+      Instruction_IObjectField fieldName -> case pv of
+        ParquetValue_Empty -> do
+          val <- interpretInstructions ParquetValue_Empty ix
           pure $
-            ParquetObject $
-              MkParquetObject $
+            ParquetValue_Object $
+              ParquetObject $
                 fromList
                   [(fieldName, val)]
-        ParquetObject (MkParquetObject hm) -> do
+        ParquetValue_Object (ParquetObject hm) -> do
           newObj <- flip (at fieldName) hm $ \mbExistingParquetVal ->
             Just
               <$> interpretInstructions
-                (fromMaybe EmptyValue mbExistingParquetVal)
+                (fromMaybe ParquetValue_Empty mbExistingParquetVal)
                 ix
-          pure $ ParquetObject $ MkParquetObject newObj
+          pure $ ParquetValue_Object $ ParquetObject newObj
         v ->
           throwError $
             "Cannot apply IObjectField instruction on parquet value "

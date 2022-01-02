@@ -8,7 +8,7 @@ module Parquet.Stream.Reader
 
     -- *
     decodeConduit,
-    readColumnChunk
+    readColumnChunk,
   )
 where
 
@@ -27,7 +27,7 @@ import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.Serialization.Binary as CB
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
-import qualified Data.Text as T
+import qualified Data.Text as T (intercalate, pack)
 import qualified Data.Text.Lazy as LT
 import Data.Traversable (for)
 import Parquet.Decoder (BitWidth (..), decodeBPBE, decodeRLEBPHybrid)
@@ -54,17 +54,17 @@ data ColumnValue = ColumnValue
 
 -- |
 data Value
-  = ValueInt64 Int64
-  | ValueByteString BS.ByteString
-  | Null
+  = Value_Int64 Int64
+  | Value_ByteString ByteString
+  | Value_Null
   deriving (Show, Eq)
 
 ------------------------------------------------------------------------------
 
 -- |
 data PageCtx = PageCtx
-  { _pcSchema :: M.Map T.Text TT.SchemaElement,
-    _pcPath :: NE.NonEmpty T.Text,
+  { _pcSchema :: M.Map Text TT.SchemaElement,
+    _pcPath :: NE.NonEmpty Text,
     _pcColumnTy :: TT.Type
   }
   deriving (Show, Eq)
@@ -95,7 +95,7 @@ dataPageReader ::
   (PR m, MonadReader PageCtx m) =>
   TT.DataPageHeader ->
   Maybe [Value] ->
-  C.ConduitT BS.ByteString ColumnValue m ()
+  C.ConduitT ByteString ColumnValue m ()
 dataPageReader header mb_dict = do
   let num_values = header ^. TT.pinchField @"num_values"
   let def_level_encoding = header ^. TT.pinchField @"definition_level_encoding"
@@ -120,7 +120,7 @@ dataPageReader header mb_dict = do
   pure ()
   where
     find_from_dict ::
-      forall m0. MonadError T.Text m0 => [Value] -> Word32 -> m0 Value
+      forall m0. MonadError Text m0 => [Value] -> Word32 -> m0 Value
     find_from_dict dict (fromIntegral -> d_index) = case dict ^? ix d_index of
       Nothing ->
         throwError $
@@ -130,7 +130,7 @@ dataPageReader header mb_dict = do
       Just val -> pure val
 
     zip_level_data ::
-      forall m0 a b. MonadError T.Text m0 => [a] -> [b] -> m0 [(a, b)]
+      forall m0 a b. MonadError Text m0 => [a] -> [b] -> m0 [(a, b)]
     zip_level_data rep_data def_data =
       zipExactMay rep_data def_data
         <??> ( "Repetition and Definition data sizes differ: page has "
@@ -146,12 +146,12 @@ dataPageReader header mb_dict = do
       xs -> xs
 
     read_page_content ::
-      NE.NonEmpty T.Text ->
+      NE.NonEmpty Text ->
       TT.Encoding ->
       [(Word32, Word32)] ->
       Int32 ->
       Word32 ->
-      C.ConduitT BS.ByteString ColumnValue m ()
+      C.ConduitT ByteString ColumnValue m ()
     read_page_content path encoding level_data num_values max_def_level =
       case (mb_dict, encoding) of
         (Nothing, TT.PLAIN _) -> do
@@ -160,7 +160,7 @@ dataPageReader header mb_dict = do
                 | d == max_def_level -> do
                   (_, val) <- decodeValue
                   pure (ColumnValue r d max_def_level val)
-                | otherwise -> pure $ ColumnValue r d max_def_level Null
+                | otherwise -> pure $ ColumnValue r d max_def_level Value_Null
           logInfo $ "Values (" <> T.pack (show path) <> "): " <> (LT.toStrict $ pString $ show vals)
           C.yieldMany vals
         (Just _, TT.PLAIN _) ->
@@ -183,7 +183,7 @@ dataPageReader header mb_dict = do
               <> T.pack (show other)
     construct_dict_values ::
       forall m0.
-      (MonadError T.Text m0) =>
+      (MonadError Text m0) =>
       Word32 ->
       [Value] ->
       [(Word32, Word32)] ->
@@ -199,7 +199,7 @@ dataPageReader header mb_dict = do
         (ColumnValue r d max_def_level val :)
           <$> construct_dict_values max_def_level dict lx vx
       | otherwise = do
-        (ColumnValue r d max_def_level Null :)
+        (ColumnValue r d max_def_level Value_Null :)
           <$> construct_dict_values max_def_level dict lx (v : vx)
 
 ------------------------------------------------------------------------------
@@ -207,7 +207,7 @@ dataPageReader header mb_dict = do
 -- |
 decodeValue ::
   (PR m, MonadReader PageCtx m) =>
-  C.ConduitT BS.ByteString o m (Int64, Value)
+  C.ConduitT ByteString o m (Int64, Value)
 decodeValue =
   asks _pcColumnTy >>= \case
     (TT.BYTE_ARRAY _) -> do
@@ -216,10 +216,10 @@ decodeValue =
         replicateMSized
           (fromIntegral len)
           (CB.sinkGet (sizedGet BG.getWord8))
-      pure (consumed + 4, ValueByteString (BS.pack result))
+      pure (consumed + 4, Value_ByteString (BS.pack result))
     (TT.INT64 _) -> do
       (consumed, result) <- CB.sinkGet (sizedGet BG.getInt64le)
-      pure (consumed, ValueInt64 result)
+      pure (consumed, Value_Int64 result)
     ty ->
       throwError $
         "Don't know how to decode value of type "
@@ -232,7 +232,7 @@ decodeValue =
 dictPageReader ::
   (MonadReader PageCtx m, PR m) =>
   TT.DictionaryPageHeader ->
-  C.ConduitT BS.ByteString o m (Int64, [Value])
+  C.ConduitT ByteString o m (Int64, [Value])
 dictPageReader header = do
   let num_values = header ^. TT.pinchField @"num_values"
   let _encoding = header ^. TT.pinchField @"encoding"
@@ -241,7 +241,7 @@ dictPageReader header = do
   pure (consumed, vals)
 
 getLastSchemaElement ::
-  (MonadError T.Text m, MonadReader PageCtx m) => m TT.SchemaElement
+  (MonadError Text m, MonadReader PageCtx m) => m TT.SchemaElement
 getLastSchemaElement = do
   path <- asks _pcPath
   schema <- asks _pcSchema
@@ -256,7 +256,7 @@ readDefinitionLevel ::
   TT.Encoding ->
   BitWidth ->
   Int32 ->
-  C.ConduitT BS.ByteString a m (Int64, [Word32])
+  C.ConduitT ByteString a m (Int64, [Word32])
 readDefinitionLevel _ (BitWidth 0) _ = pure (0, [])
 readDefinitionLevel encoding bit_width num_values =
   getLastSchemaElement >>= getRepType >>= \case
@@ -268,11 +268,11 @@ readDefinitionLevel encoding bit_width num_values =
 
 -- |
 readRepetitionLevel ::
-  (C.MonadThrow m, MonadError T.Text m, MonadReader PageCtx m, MonadLogger m) =>
+  (C.MonadThrow m, MonadError Text m, MonadReader PageCtx m, MonadLogger m) =>
   TT.Encoding ->
   BitWidth ->
   Int32 ->
-  C.ConduitT BS.ByteString a m (Int64, [Word32])
+  C.ConduitT ByteString a m (Int64, [Word32])
 readRepetitionLevel encoding bit_width num_values = do
   decodeLevel encoding bit_width num_values
 
@@ -288,11 +288,11 @@ sizedGet g = do
 
 -- |
 decodeLevel ::
-  (C.MonadThrow m, MonadError T.Text m, MonadLogger m, MonadReader PageCtx m) =>
+  (C.MonadThrow m, MonadError Text m, MonadLogger m, MonadReader PageCtx m) =>
   TT.Encoding ->
   BitWidth ->
   Int32 ->
-  C.ConduitT BS.ByteString a m (Int64, [Word32])
+  C.ConduitT ByteString a m (Int64, [Word32])
 decodeLevel _ (BitWidth 0) _ = pure (0, [])
 decodeLevel encoding bit_width (fromIntegral -> num_values) = case encoding of
   TT.RLE _ ->
@@ -313,14 +313,14 @@ decodeLevel encoding bit_width (fromIntegral -> num_values) = case encoding of
 -- https://blog.twitter.com/engineering/en_us/a/2013/dremel-made-simple-with-parquet.html
 calcMaxEncodingLevels ::
   forall m.
-  (MonadReader PageCtx m, MonadError T.Text m) =>
+  (MonadReader PageCtx m, MonadError Text m) =>
   m (Word8, Word8)
 calcMaxEncodingLevels = do
   schema <- asks _pcSchema
   path <- asks _pcPath
   calc_max_encoding_levels schema path
   where
-    calc_max_encoding_levels :: M.Map T.Text TT.SchemaElement -> NE.NonEmpty T.Text -> m (Word8, Word8)
+    calc_max_encoding_levels :: M.Map Text TT.SchemaElement -> NE.NonEmpty Text -> m (Word8, Word8)
     calc_max_encoding_levels schema path = do
       let pathText = T.intercalate "." (NE.toList path)
       schema_element <- M.lookup pathText schema <??> ("Schema Element cannot be found: " <> pathText)
@@ -337,7 +337,7 @@ calcMaxEncodingLevels = do
 
 -- |
 getRepType ::
-  MonadError T.Text m => TT.SchemaElement -> m TT.FieldRepetitionType
+  MonadError Text m => TT.SchemaElement -> m TT.FieldRepetitionType
 getRepType e =
   e
     ^. TT.pinchField @"repetition_type"
@@ -347,7 +347,7 @@ getRepType e =
 ------------------------------------------------------------------------------
 
 -- |
-validateCompression :: MonadError T.Text m => TT.ColumnMetaData -> m ()
+validateCompression :: MonadError Text m => TT.ColumnMetaData -> m ()
 validateCompression metadata =
   let compression = metadata ^. TT.pinchField @"codec"
    in case compression of
@@ -361,9 +361,9 @@ validateCompression metadata =
 readColumnChunk ::
   PR m =>
   TT.SchemaElement ->
-  M.Map T.Text TT.SchemaElement ->
+  M.Map Text TT.SchemaElement ->
   TT.ColumnChunk ->
-  C.ConduitT BS.ByteString ColumnValue m ()
+  C.ConduitT ByteString ColumnValue m ()
 readColumnChunk root schema cc = do
   let mb_metadata = cc ^. TT.pinchField @"meta_data"
   metadata <- mb_metadata <??> "Metadata could not be found"
@@ -381,7 +381,7 @@ readPage ::
   (MonadLogger m, MonadReader PageCtx m, PR m) =>
   Int64 ->
   Maybe [Value] ->
-  C.ConduitT BS.ByteString ColumnValue m ()
+  C.ConduitT ByteString ColumnValue m ()
 readPage 0 _ = pure ()
 readPage remaining mb_dict = do
   (page_header_size, page_header :: TT.PageHeader) <- decodeConduit remaining
@@ -416,9 +416,9 @@ readPage remaining mb_dict = do
 -- |
 decodeConduit ::
   forall a size m o.
-  (MonadError T.Text m, MonadIO m, Integral size, Pinch.Pinchable a) =>
+  (MonadError Text m, MonadIO m, Integral size, Pinch.Pinchable a) =>
   size ->
-  C.ConduitT BS.ByteString o m (Int, a)
+  C.ConduitT ByteString o m (Int, a)
 decodeConduit (fromIntegral -> size) = do
   (left, val) <-
     liftEither
