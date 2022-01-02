@@ -1,5 +1,9 @@
 -- |
-module Parquet.Types.FieldRepetitionType where
+module Parquet.Types.FieldRepetitionType
+  ( -- * Type definitions
+    FieldRepetitionType (..),
+  )
+where
 
 ------------------------------------------------------------------------------
 

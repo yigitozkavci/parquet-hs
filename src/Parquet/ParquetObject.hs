@@ -1,24 +1,18 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-
+-- |
 module Parquet.ParquetObject where
 
+------------------------------------------------------------------------------
+
 import Codec.Serialise (Serialise)
-import Control.Lens
-import qualified Data.Aeson as JSON
+import Data.Aeson (FromJSON (..), ToJSON (..))
+import qualified Data.Aeson as A
 import Data.Binary (Binary (..))
-import qualified Data.ByteString as BS
-import qualified Data.HashMap.Strict as HM
-import Data.Ratio
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
-import qualified Data.Vector as V
 import Parquet.Prelude
 
-newtype ParquetObject = MkParquetObject (HM.HashMap T.Text ParquetValue)
+------------------------------------------------------------------------------
+
+-- |
+newtype ParquetObject = MkParquetObject (HashMap Text ParquetValue)
   deriving (Eq, Show, Generic, Serialise)
 
 instance Semigroup ParquetObject where
@@ -28,12 +22,15 @@ instance Monoid ParquetObject where
   mempty = MkParquetObject mempty
 
 instance Binary ParquetObject where
-  put (MkParquetObject hm) = put (HM.toList hm)
-  get = MkParquetObject . HM.fromList <$> get
+  put (MkParquetObject hm) = put (toList hm)
+  get = MkParquetObject . fromList <$> get
 
-instance JSON.ToJSON ParquetObject where
-  toJSON (MkParquetObject obj) = JSON.toJSON obj
+instance ToJSON ParquetObject where
+  toJSON (MkParquetObject obj) = toJSON obj
 
+------------------------------------------------------------------------------
+
+-- |
 newtype ParquetList = MkParquetList [ParquetValue]
   deriving (Eq, Show, Generic, Serialise)
 
@@ -47,46 +44,43 @@ instance Binary ParquetList where
   put (MkParquetList l) = put l
   get = MkParquetList <$> get
 
-instance JSON.ToJSON ParquetList where
-  toJSON (MkParquetList l) = JSON.toJSON l
+instance ToJSON ParquetList where
+  toJSON (MkParquetList l) = toJSON l
 
+------------------------------------------------------------------------------
+
+-- |
 data ParquetValue
   = ParquetObject !ParquetObject
   | ParquetList !ParquetList
   | ParquetInt !Int64
-  | ParquetString !BS.ByteString
+  | ParquetString !ByteString
   | ParquetBool !Bool
   | ParquetNull
   | EmptyValue
   deriving (Eq, Show, Generic, Binary, Serialise)
 
-instance JSON.FromJSON ParquetValue where
+instance FromJSON ParquetValue where
   parseJSON = \case
-    JSON.Object obj -> do
-      ParquetObject . MkParquetObject <$> traverse JSON.parseJSON obj
-    JSON.Array vec -> do
-      ParquetList . MkParquetList . V.toList <$> traverse JSON.parseJSON vec
-    JSON.Number sci ->
+    A.Object obj -> do
+      ParquetObject . MkParquetObject <$> traverse parseJSON obj
+    A.Array vec -> do
+      ParquetList . MkParquetList . toList <$> traverse parseJSON vec
+    A.Number sci ->
       pure $ ParquetInt $ fromInteger $ numerator $ toRational sci
-    JSON.String s ->
-      pure $ ParquetString $ T.encodeUtf8 s
-    JSON.Bool b -> pure $ ParquetBool b
-    JSON.Null -> pure ParquetNull
+    A.String s ->
+      pure $ ParquetString $ encodeUtf8 s
+    A.Bool b -> pure $ ParquetBool b
+    A.Null -> pure ParquetNull
 
-instance JSON.ToJSON ParquetValue where
+instance ToJSON ParquetValue where
   toJSON = \case
-    ParquetObject obj -> JSON.toJSON obj
-    ParquetList l -> JSON.toJSON l
-    ParquetInt i64 -> JSON.Number (fromIntegral i64)
-    ParquetString bs -> case T.decodeUtf8' bs of
-      Right t -> JSON.String t
-      Left _ -> JSON.String "<non-utf8-string>"
-    ParquetBool b -> JSON.Bool b
-    ParquetNull -> JSON.Null
-    EmptyValue -> JSON.Null
-
-makeLenses ''ParquetObject
-makePrisms ''ParquetObject
-
-makeLenses ''ParquetValue
-makePrisms ''ParquetValue
+    ParquetObject obj -> toJSON obj
+    ParquetList l -> toJSON l
+    ParquetInt i64 -> A.Number (fromIntegral i64)
+    ParquetString bs -> case decodeUtf8' bs of
+      Right t -> A.String t
+      Left _ -> A.String "<non-utf8-string>"
+    ParquetBool b -> A.Bool b
+    ParquetNull -> A.Null
+    EmptyValue -> A.Null

@@ -1,5 +1,22 @@
 -- |
-module Parquet.Types.Common where
+module Parquet.Types.Common
+  ( -- * Type definitions
+    BsonType,
+    EnumType,
+    DateType,
+    DecimalType,
+    IntType,
+    JsonType,
+    ListType,
+    MapType,
+    NullType,
+    StringType,
+    TimestampType,
+    TimeType,
+    Type (..),
+    UUIDType,
+  )
+where
 
 ------------------------------------------------------------------------------
 

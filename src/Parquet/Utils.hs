@@ -1,10 +1,21 @@
-{-# LANGUAGE LambdaCase #-}
+-- |
+module Parquet.Utils
+  ( -- * Helper functions
+    failOnExcept,
+    failOnMay,
 
-module Parquet.Utils where
+    -- * Operators
+    (<??>),
+  )
+where
+
+------------------------------------------------------------------------------
 
 import Control.Monad.Except
-import qualified Data.Text as T
+import Data.Text (unpack)
 import Parquet.Prelude
+
+------------------------------------------------------------------------------
 
 (<??>) :: MonadError b m => Maybe a -> b -> m a
 (<??>) Nothing err = throwError err
@@ -12,6 +23,22 @@ import Parquet.Prelude
 
 infixl 4 <??>
 
+------------------------------------------------------------------------------
+
+-- |
+failOnExcept ::
+  ( Monad m,
+    MonadFail m
+  ) =>
+  ExceptT Text m a ->
+  m a
+failOnExcept =
+  runExceptT >=> \case
+    Left err -> fail (unpack err)
+    Right v -> pure v
+
+------------------------------------------------------------------------------
+-- |
 failOnMay ::
   ( Monad m,
     MonadFail m
@@ -21,14 +48,3 @@ failOnMay ::
   m a
 failOnMay Nothing s = fail s
 failOnMay (Just a) _ = pure a
-
-failOnExcept ::
-  ( Monad m,
-    MonadFail m
-  ) =>
-  ExceptT T.Text m a ->
-  m a
-failOnExcept =
-  runExceptT >=> \case
-    Left err -> fail (T.unpack err)
-    Right v -> pure v

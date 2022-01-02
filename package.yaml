@@ -11,6 +11,7 @@ license: BSD3
 ghc-options: -Wall -O2 -fspecialise-aggressively
 
 default-extensions:
+  - ConstraintKinds
   - DataKinds
   - DeriveAnyClass
   - DeriveGeneric
@@ -20,6 +21,7 @@ default-extensions:
   - MultiWayIf
   - NoImplicitPrelude
   - ScopedTypeVariables
+  - TemplateHaskell
   - TypeApplications
   - TypeOperators
   - TypeFamilies

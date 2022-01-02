@@ -1,5 +1,8 @@
 -- |
-module Parquet.Types.RowGroup where
+module Parquet.Types.RowGroup
+  ( RowGroup
+  )
+where
 
 ------------------------------------------------------------------------------
 

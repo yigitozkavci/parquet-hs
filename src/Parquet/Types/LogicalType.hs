@@ -1,5 +1,9 @@
 -- |
-module Parquet.Types.LogicalType where
+module Parquet.Types.LogicalType
+  ( -- * Type definitions
+    LogicalType
+  )
+where
 
 ------------------------------------------------------------------------------
 

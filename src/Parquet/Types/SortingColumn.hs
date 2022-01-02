@@ -1,5 +1,9 @@
 -- |
-module Parquet.Types.SortingColumn where
+module Parquet.Types.SortingColumn
+  ( -- * Type definitions
+    SortingColumn
+  )
+where
 
 ------------------------------------------------------------------------------
 

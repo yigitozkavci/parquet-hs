@@ -1,5 +1,9 @@
 -- |
-module Parquet.Types.CompressionCodec where
+module Parquet.Types.CompressionCodec
+  ( -- * Type definitions
+    CompressionCodec (..),
+  )
+where
 
 ------------------------------------------------------------------------------
 

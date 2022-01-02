@@ -1,7 +1,18 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Parquet.Stream.Reader where
+module Parquet.Stream.Reader
+  ( -- * Type definitions
+    ColumnValue (..),
+    Value (..),
+
+    -- *
+    decodeConduit,
+    readColumnChunk
+  )
+where
+
+------------------------------------------------------------------------------
 
 import qualified Conduit as C
 import Control.Lens
@@ -28,6 +39,9 @@ import qualified Pinch
 import Safe.Exact (zipExactMay)
 import Text.Pretty.Simple (pString)
 
+------------------------------------------------------------------------------
+
+-- |
 data ColumnValue = ColumnValue
   { _cvRepetitionLevel :: Word32,
     _cvDefinitionLevel :: Word32,
@@ -35,6 +49,27 @@ data ColumnValue = ColumnValue
     _cvValue :: Value
   }
   deriving (Eq, Show)
+
+------------------------------------------------------------------------------
+
+-- |
+data Value
+  = ValueInt64 Int64
+  | ValueByteString BS.ByteString
+  | Null
+  deriving (Show, Eq)
+
+------------------------------------------------------------------------------
+
+-- |
+data PageCtx = PageCtx
+  { _pcSchema :: M.Map T.Text TT.SchemaElement,
+    _pcPath :: NE.NonEmpty T.Text,
+    _pcColumnTy :: TT.Type
+  }
+  deriving (Show, Eq)
+
+------------------------------------------------------------------------------
 
 -- | TODO: This is so unoptimized that my eyes bleed.
 replicateMSized :: (Monad m) => Int -> m (Int64, result) -> m (Int64, [result])
@@ -44,22 +79,17 @@ replicateMSized n comp = do
   (rest_consumed, rest_result) <- replicateMSized (n - 1) comp
   pure (consumed + rest_consumed, result : rest_result)
 
-forSized :: (Monad m) => [a] -> (a -> m (Int64, result)) -> m (Int64, [result])
-forSized = flip traverseSized
+------------------------------------------------------------------------------
 
-traverseSized ::
-  (Monad m) => (a -> m (Int64, result)) -> [a] -> m (Int64, [result])
-traverseSized _ [] = pure (0, [])
-traverseSized comp (x : xs) = do
-  (consumed, result) <- comp x
-  (rest_consumed, rest_result) <- traverseSized comp xs
-  pure (consumed + rest_consumed, result : rest_result)
-
+-- |
 maxLevelToBitWidth :: Word8 -> BitWidth
 maxLevelToBitWidth 0 = BitWidth 0
 maxLevelToBitWidth max_level =
   BitWidth $ floor (logBase 2 (fromIntegral max_level) :: Double) + 1
 
+------------------------------------------------------------------------------
+
+-- |
 dataPageReader ::
   forall m.
   (PR m, MonadReader PageCtx m) =>
@@ -172,12 +202,9 @@ dataPageReader header mb_dict = do
         (ColumnValue r d max_def_level Null :)
           <$> construct_dict_values max_def_level dict lx (v : vx)
 
-data Value
-  = ValueInt64 Int64
-  | ValueByteString BS.ByteString
-  | Null
-  deriving (Show, Eq)
+------------------------------------------------------------------------------
 
+-- |
 decodeValue ::
   (PR m, MonadReader PageCtx m) =>
   C.ConduitT BS.ByteString o m (Int64, Value)
@@ -199,6 +226,9 @@ decodeValue =
           <> T.pack (show ty)
           <> " yet."
 
+------------------------------------------------------------------------------
+
+-- |
 dictPageReader ::
   (MonadReader PageCtx m, PR m) =>
   TT.DictionaryPageHeader ->
@@ -210,13 +240,6 @@ dictPageReader header = do
   (consumed, vals) <- replicateMSized (fromIntegral num_values) decodeValue
   pure (consumed, vals)
 
-data PageCtx = PageCtx
-  { _pcSchema :: M.Map T.Text TT.SchemaElement,
-    _pcPath :: NE.NonEmpty T.Text,
-    _pcColumnTy :: TT.Type
-  }
-  deriving (Show, Eq)
-
 getLastSchemaElement ::
   (MonadError T.Text m, MonadReader PageCtx m) => m TT.SchemaElement
 getLastSchemaElement = do
@@ -225,6 +248,9 @@ getLastSchemaElement = do
   M.lookup (T.intercalate "." (NE.toList path)) schema
     <??> "Schema element could not be found"
 
+------------------------------------------------------------------------------
+
+-- |
 readDefinitionLevel ::
   (PR m, MonadReader PageCtx m) =>
   TT.Encoding ->
@@ -238,6 +264,9 @@ readDefinitionLevel encoding bit_width num_values =
     TT.REPEATED _ -> decodeLevel encoding bit_width num_values
     TT.REQUIRED _ -> pure (0, [])
 
+------------------------------------------------------------------------------
+
+-- |
 readRepetitionLevel ::
   (C.MonadThrow m, MonadError T.Text m, MonadReader PageCtx m, MonadLogger m) =>
   TT.Encoding ->
@@ -247,11 +276,17 @@ readRepetitionLevel ::
 readRepetitionLevel encoding bit_width num_values = do
   decodeLevel encoding bit_width num_values
 
+------------------------------------------------------------------------------
+
+-- |
 sizedGet :: BG.Get result -> BG.Get (Int64, result)
 sizedGet g = do
   (before, result, after) <- liftA3 (,,) BG.bytesRead g BG.bytesRead
   pure (after - before, result)
 
+------------------------------------------------------------------------------
+
+-- |
 decodeLevel ::
   (C.MonadThrow m, MonadError T.Text m, MonadLogger m, MonadReader PageCtx m) =>
   TT.Encoding ->
@@ -271,6 +306,8 @@ decodeLevel encoding bit_width (fromIntegral -> num_values) = case encoding of
         BG.getWord32le
           *> (take (fromIntegral num_values) <$> decodeBPBE bit_width)
   _ -> throwError "Only RLE and BIT_PACKED encodings are supported for levels"
+
+------------------------------------------------------------------------------
 
 -- | Algorithm:
 -- https://blog.twitter.com/engineering/en_us/a/2013/dremel-made-simple-with-parquet.html
@@ -296,6 +333,9 @@ calcMaxEncodingLevels = do
         (root : v : vx) -> bimap (+ repVal) (+ defVal) <$> calc_max_encoding_levels schema (root NE.:| v : vx)
         _ -> pure (repVal, defVal)
 
+------------------------------------------------------------------------------
+
+-- |
 getRepType ::
   MonadError T.Text m => TT.SchemaElement -> m TT.FieldRepetitionType
 getRepType e =
@@ -304,6 +344,9 @@ getRepType e =
     <??> "Repetition type could not be found for elem "
     <> T.pack (show e)
 
+------------------------------------------------------------------------------
+
+-- |
 validateCompression :: MonadError T.Text m => TT.ColumnMetaData -> m ()
 validateCompression metadata =
   let compression = metadata ^. TT.pinchField @"codec"
@@ -312,6 +355,9 @@ validateCompression metadata =
         _ ->
           throwError "This library doesn't support compression algorithms yet."
 
+------------------------------------------------------------------------------
+
+-- |
 readColumnChunk ::
   PR m =>
   TT.SchemaElement ->
@@ -328,6 +374,9 @@ readColumnChunk root schema cc = do
   let page_ctx = PageCtx schema path column_ty
   C.runReaderC page_ctx $ readPage size Nothing
 
+------------------------------------------------------------------------------
+
+-- |
 readPage ::
   (MonadLogger m, MonadReader PageCtx m, PR m) =>
   Int64 ->
@@ -362,12 +411,9 @@ readPage remaining mb_dict = do
     (Just _, Just _, _) ->
       throwError "Page has both dictionary and data page headers."
 
-failOnError :: Show err => IO (Either err b) -> IO b
-failOnError v =
-  v >>= \case
-    Left err -> fail $ show err
-    Right val -> pure val
+------------------------------------------------------------------------------
 
+-- |
 decodeConduit ::
   forall a size m o.
   (MonadError T.Text m, MonadIO m, Integral size, Pinch.Pinchable a) =>

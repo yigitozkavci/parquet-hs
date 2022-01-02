@@ -10,7 +10,11 @@ module Parquet.Decoder
     decodeRLE,
     decodeRLEBPHybrid,
     decodeVarint,
+
+    -- * Encoder functions
     encodeVarint,
+
+    -- * Utils
     takeBytesLe,
   )
 where
@@ -27,12 +31,6 @@ import Parquet.Prelude
 -- |
 newtype BitWidth = BitWidth Word8
   deriving (Show, Eq, Ord)
-
-------------------------------------------------------------------------------
-
--- |
-cLeb128ByteLimit :: Int
-cLeb128ByteLimit = 32
 
 ------------------------------------------------------------------------------
 
@@ -135,7 +133,7 @@ decodeRLEBPHybrid :: BitWidth -> Int32 -> Get [Word32]
 decodeRLEBPHybrid bit_width num_values = do
   header <- decodeVarint
   let encoding_ty = header .&. 0x01
-  let !run_len = header `shiftR` 1
+      !run_len = header `shiftR` 1
 
   -- Unsafe fromInteger justification:
   -- run_len value being in range [1, 2^31-1]
@@ -155,6 +153,8 @@ decodeRLEBPHybrid bit_width num_values = do
 decodeVarint :: Get Integer
 decodeVarint = go cLeb128ByteLimit 0 0
   where
+    cLeb128ByteLimit = 32
+
     go :: Int -> Integer -> Int -> Get Integer
     go 0 _ _ =
       fail $
@@ -164,8 +164,8 @@ decodeVarint = go cLeb128ByteLimit 0 0
     go rem_limit acc sh = do
       byte <- getWord8
       let high = byte .&. 0x80
-      let low = fromIntegral $ byte .&. 0x7F
-      let res = (low `shiftL` sh) .|. acc
+          low = fromIntegral $ byte .&. 0x7F
+          res = (low `shiftL` sh) .|. acc
       if high == 0x80 then go (rem_limit - 1) res (sh + 7) else pure res
 
 ------------------------------------------------------------------------------
@@ -173,10 +173,10 @@ decodeVarint = go cLeb128ByteLimit 0 0
 -- |
 encodeVarint :: Integer -> Put
 encodeVarint 0 = pure ()
-encodeVarint val = do
+encodeVarint val =
   let low = fromIntegral $ val .&. 0x7F
-  if val `shiftR` 7 == 0
-    then putWord8 low
-    else do
-      putWord8 $ low .|. 0x80
-      encodeVarint (val `shiftR` 7)
+   in if val `shiftR` 7 == 0
+        then putWord8 low
+        else do
+          putWord8 $ low .|. 0x80
+          encodeVarint (val `shiftR` 7)

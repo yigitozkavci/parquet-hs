@@ -1,5 +1,9 @@
 -- |
-module Parquet.Types.SchemaElement where
+module Parquet.Types.SchemaElement
+  ( -- * Type definitions
+    SchemaElement
+  )
+where
 
 ------------------------------------------------------------------------------
 

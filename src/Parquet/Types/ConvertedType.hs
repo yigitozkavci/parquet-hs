@@ -1,9 +1,9 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
-
 -- |
-module Parquet.Types.ConvertedType where
+module Parquet.Types.ConvertedType
+  ( -- * Type definitions
+    ConvertedType
+  )
+where
 
 ------------------------------------------------------------------------------
 

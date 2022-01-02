@@ -1,6 +1,7 @@
--- | This module re-exports all the types exposed by `parquet-hs`.
+-- |
 module Parquet.Types
-  ( module X,
+  ( -- * Re-exports
+    module X,
   )
 where
 

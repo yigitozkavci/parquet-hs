@@ -1,6 +1,7 @@
 -- |
 module Parquet.Types.Page
-  ( PageHeader (..),
+  ( -- * Type definitions
+    PageHeader (..),
     DataPageHeader (..),
     DataPageHeaderV2 (..),
     DictionaryPageHeader (..),

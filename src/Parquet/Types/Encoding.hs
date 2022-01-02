@@ -1,6 +1,7 @@
 -- |
 module Parquet.Types.Encoding
-  ( Encoding (..),
+  ( -- * Type definitions
+    Encoding (..),
   )
 where
 

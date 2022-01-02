@@ -1,5 +1,11 @@
 -- |
-module Parquet.Types.Column where
+module Parquet.Types.Column
+  ( -- * Type definitions
+    ColumnChunk,
+    ColumnOrder,
+    ColumnMetaData (..)
+  )
+where
 
 ------------------------------------------------------------------------------
 
@@ -64,6 +70,8 @@ data ColumnCryptoMetaData
 data ColumnOrder
   = ColumnOrder_TYPE_ORDER (Field 1 TypeDefinedOrder)
   deriving (Show, Eq, Generic, Pinchable, Binary)
+
+------------------------------------------------------------------------------
 
 -- |
 data TypeDefinedOrder = TypeDefinedOrder

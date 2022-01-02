@@ -1,6 +1,7 @@
 -- |
 module Parquet.Types.KeyValue
-  ( KeyValue (..),
+  ( -- * Type definitions
+    KeyValue (..),
   )
 where
 

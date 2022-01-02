@@ -1,6 +1,7 @@
 -- |
 module Parquet.Types.Statistics
-  ( Statistics (..),
+  ( -- * Type definitions
+    Statistics,
   )
 where
 

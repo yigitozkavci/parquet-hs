@@ -1,5 +1,7 @@
+-- |
 module Parquet.Prelude
-  ( module X,
+  ( -- * Re-exports
+    module X,
   )
 where
 

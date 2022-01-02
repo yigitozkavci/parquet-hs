@@ -1,5 +1,10 @@
 -- |
-module Parquet.Types.AesGcm where
+module Parquet.Types.AesGcm
+  ( -- * Type definitions
+    AesGcmV1,
+    AesGcmCtrV1,
+  )
+where
 
 ------------------------------------------------------------------------------
 

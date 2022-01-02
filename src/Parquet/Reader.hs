@@ -109,7 +109,17 @@
 -- {f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [{ element: _?_ }]}]}
 -- > (r: 0, d: 0, v: 3, p: [])
 -- {f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [{ element: 3 }]}]}
-module Parquet.Reader where
+module Parquet.Reader
+  ( -- *
+    readWholeParquetFile,
+
+    -- *
+    readFieldTypeMapping,
+    sourceParquet,
+    sourceRowGroupFromRemoteFile,
+    remoteParquetFile,
+  )
+where
 
 ------------------------------------------------------------------------------
 
@@ -124,10 +134,9 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.List as CL
-import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as M
 import qualified Data.Sequence as Seq
-import qualified Data.Text as T
+import Data.Text (pack)
 import qualified Data.Text.Lazy as LT
 import Data.Traversable (for)
 import Network.HTTP.Client (Request (requestHeaders))
@@ -173,19 +182,16 @@ newtype ColumnConstructor = ColumnConstructor
 type Url = String
 
 -- |
-type Record = [(ColumnValue, [T.Text])]
-
--- |
 type InstructionSet = Seq.Seq Instruction
 
 ------------------------------------------------------------------------------
 
 -- |
 readFieldTypeMapping ::
-  MonadError T.Text m => TT.FileMetadata -> m (HM.HashMap T.Text TT.Type)
+  MonadError Text m => TT.FileMetadata -> m (HashMap Text TT.Type)
 readFieldTypeMapping fm =
   let schemaElements = fm ^. TT.pinchField @"schema"
-   in fmap HM.fromList $
+   in fmap fromList $
         for schemaElements $ \se -> do
           let name = se ^. TT.pinchField @"name"
           case se ^. TT.pinchField @"type" of
@@ -197,7 +203,7 @@ readFieldTypeMapping fm =
 
 -- |
 readMetadata ::
-  ( MonadError T.Text m,
+  ( MonadError Text m,
     MonadIO m,
     MonadFail m
   ) =>
@@ -259,7 +265,7 @@ remoteParquetFile url = ParquetSource $ \pos -> do
 readWholeParquetFile ::
   ( C.MonadThrow m,
     MonadIO m,
-    MonadError T.Text m,
+    MonadError Text m,
     C.MonadResource m,
     MonadLogger m,
     MonadFail m
@@ -291,16 +297,6 @@ sourceParquet fp =
 ------------------------------------------------------------------------------
 
 -- |
-foldMaybeM ::
-  (Foldable t, Monad m) => (b -> a -> m (Maybe b)) -> b -> t a -> m b
-foldMaybeM action = foldM $ \b a ->
-  action b a >>= \case
-    Nothing -> pure b
-    Just newB -> pure newB
-
-------------------------------------------------------------------------------
-
--- |
 sourceRowGroupFromRemoteFile ::
   ( C.MonadResource m,
     C.MonadIO m,
@@ -313,13 +309,6 @@ sourceRowGroupFromRemoteFile ::
   TT.RowGroup ->
   C.ConduitT () ParquetValue m ()
 sourceRowGroupFromRemoteFile url rg = sourceRowGroup (remoteParquetFile url) rg
-
-------------------------------------------------------------------------------
-
--- |
-throwOnNothing :: MonadError err m => err -> Maybe a -> m a
-throwOnNothing err Nothing = throwError err
-throwOnNothing _ (Just v) = pure v
 
 ------------------------------------------------------------------------------
 
@@ -381,12 +370,12 @@ generateInstructions ::
     MonadLogger m,
     MonadReader TT.FileMetadata m
   ) =>
-  C.ConduitT (ColumnValue, [T.Text]) ColumnConstructor m ()
+  C.ConduitT (ColumnValue, [Text]) ColumnConstructor m ()
 generateInstructions = loop Seq.empty
   where
     loop ::
       Seq.Seq InstructionSet ->
-      C.ConduitT (ColumnValue, [T.Text]) ColumnConstructor m ()
+      C.ConduitT (ColumnValue, [Text]) ColumnConstructor m ()
     loop instructions =
       C.await >>= \case
         Nothing ->
@@ -405,8 +394,8 @@ generateInstructions = loop Seq.empty
 
     go ::
       Seq.Seq InstructionSet ->
-      (ColumnValue, [T.Text]) ->
-      C.ConduitT (ColumnValue, [T.Text]) ColumnConstructor m ()
+      (ColumnValue, [Text]) ->
+      C.ConduitT (ColumnValue, [Text]) ColumnConstructor m ()
     go ix cv =
       mkInstructions cv >>= \case
         Nothing -> logError "Could not create instructions: "
@@ -434,12 +423,12 @@ mkInstructions ::
     MonadLogger m,
     MonadReader TT.FileMetadata m
   ) =>
-  (ColumnValue, [T.Text]) ->
+  (ColumnValue, [Text]) ->
   m (Maybe InstructionSet)
 mkInstructions = go 1
   where
     go currListLevel c = do
-      logInfo $ "Creating instruction for column value: " <> T.pack (show c)
+      logInfo $ "Creating instruction for column value: " <> pack (show c)
       instrx <- case c of
         (ColumnValue _ 0 _ v, []) -> pure $ Just $ Seq.singleton $ IValue v
         (ColumnValue {}, []) ->
@@ -475,7 +464,7 @@ mkInstructions = go 1
                 currListLevel
                 (ColumnValue r (d - 1) md v, restPath)
             pure $ (IObjectField fieldName Seq.<|) <$> mb_rest_instructions
-      logInfo $ "Instruction set: " <> T.pack (show instrx)
+      logInfo $ "Instruction set: " <> pack (show instrx)
       pure instrx
 
 ------------------------------------------------------------------------------
@@ -521,7 +510,7 @@ sourceRowGroup source rg = do
     )
     C..| CL.mapM (construct_record initColumnState)
   where
-    mb_path :: TT.ColumnChunk -> Maybe [T.Text]
+    mb_path :: TT.ColumnChunk -> Maybe [Text]
     mb_path cc =
       TT.unField
         . TT._ColumnMetaData_path_in_schema
@@ -558,7 +547,7 @@ data Instruction
   | INewList
   | INullList
   | INullObject
-  | IObjectField T.Text
+  | IObjectField Text
   deriving (Eq, Show)
 
 ------------------------------------------------------------------------------
@@ -579,16 +568,16 @@ data Instruction
 -- Returns;
 -- { "f1": [[1, 2]] }
 interpretInstructions ::
-  (MonadLogger m, MonadError T.Text m) =>
+  (MonadLogger m, MonadError Text m) =>
   ParquetValue ->
   InstructionSet ->
   m ParquetValue
 interpretInstructions parquetVal is = do
   logInfo $
     "Interpreting instructions: "
-      <> T.pack (show parquetVal)
+      <> pack (show parquetVal)
       <> ", "
-      <> T.pack (show is)
+      <> pack (show is)
   case (parquetVal, is) of
     (EmptyValue, Seq.Empty) ->
       throwError "Could not generate a parquet value with given instructions."
@@ -597,7 +586,7 @@ interpretInstructions parquetVal is = do
     (pv, i Seq.:<| ix) -> case i of
       IValue val -> pure $ valueToParquetValue val
       INullList -> pure $ ParquetList $ MkParquetList []
-      INullObject -> pure $ ParquetObject $ MkParquetObject $ HM.fromList []
+      INullObject -> pure $ ParquetObject $ MkParquetObject $ fromList []
       IListElement -> case pv of
         ParquetList (MkParquetList xs) -> case reverse xs of
           (revX : revXs) -> do
@@ -607,7 +596,7 @@ interpretInstructions parquetVal is = do
         v ->
           throwError $
             "Wrong parquet value "
-              <> T.pack (show v)
+              <> pack (show v)
               <> " type for instruction IListElement"
       INewList -> case pv of
         EmptyValue -> do
@@ -619,7 +608,7 @@ interpretInstructions parquetVal is = do
         v ->
           throwError $
             "Wrong parquet value "
-              <> T.pack (show v)
+              <> pack (show v)
               <> " type for instruction INewList"
       IObjectField fieldName -> case pv of
         EmptyValue -> do
@@ -627,7 +616,7 @@ interpretInstructions parquetVal is = do
           pure $
             ParquetObject $
               MkParquetObject $
-                HM.fromList
+                fromList
                   [(fieldName, val)]
         ParquetObject (MkParquetObject hm) -> do
           newObj <- flip (at fieldName) hm $ \mbExistingParquetVal ->
@@ -639,17 +628,17 @@ interpretInstructions parquetVal is = do
         v ->
           throwError $
             "Cannot apply IObjectField instruction on parquet value "
-              <> T.pack (show v)
+              <> pack (show v)
 
 ------------------------------------------------------------------------------
 
 -- |
-mkSchemaMapping :: [TT.SchemaElement] -> M.Map T.Text TT.SchemaElement
-mkSchemaMapping schema = snd $ execState (go "") (schema, M.empty)
+mkSchemaMapping :: [TT.SchemaElement] -> Map Text TT.SchemaElement
+mkSchemaMapping schema = snd $ execState (go "") (schema, mempty)
   where
     go ::
-      MonadState ([TT.SchemaElement], M.Map T.Text TT.SchemaElement) m =>
-      T.Text ->
+      MonadState ([TT.SchemaElement], Map Text TT.SchemaElement) m =>
+      Text ->
       m ()
     go prefix = do
       get >>= \case

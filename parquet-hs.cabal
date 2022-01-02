@@ -53,6 +53,7 @@ library
   hs-source-dirs:
       src
   default-extensions:
+      ConstraintKinds
       DataKinds
       DeriveAnyClass
       DeriveGeneric
@@ -62,6 +63,7 @@ library
       MultiWayIf
       NoImplicitPrelude
       ScopedTypeVariables
+      TemplateHaskell
       TypeApplications
       TypeOperators
       TypeFamilies
@@ -102,6 +104,7 @@ test-suite parquet-hs-integration
   hs-source-dirs:
       tests/integration
   default-extensions:
+      ConstraintKinds
       DataKinds
       DeriveAnyClass
       DeriveGeneric
@@ -111,6 +114,7 @@ test-suite parquet-hs-integration
       MultiWayIf
       NoImplicitPrelude
       ScopedTypeVariables
+      TemplateHaskell
       TypeApplications
       TypeOperators
       TypeFamilies
@@ -142,6 +146,7 @@ test-suite parquet-hs-unit
   hs-source-dirs:
       tests/unit
   default-extensions:
+      ConstraintKinds
       DataKinds
       DeriveAnyClass
       DeriveGeneric
@@ -151,6 +156,7 @@ test-suite parquet-hs-unit
       MultiWayIf
       NoImplicitPrelude
       ScopedTypeVariables
+      TemplateHaskell
       TypeApplications
       TypeOperators
       TypeFamilies

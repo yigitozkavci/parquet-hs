@@ -1,5 +1,9 @@
 -- |
-module Parquet.Types.FileMetadata where
+module Parquet.Types.FileMetadata
+  ( -- * Type definitions
+    FileMetadata,
+  )
+where
 
 ------------------------------------------------------------------------------
 
