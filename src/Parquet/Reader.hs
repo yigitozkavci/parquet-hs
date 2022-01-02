@@ -1,135 +1,131 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeApplications #-}
 
-{-
-An example schema:
-
-[root] spark_schema: {
-  optional f1: {
-    repeated group list: {
-      optional element: {
-        repeated group list: {
-          optional int64 element = 1;
-        }
-      }
-    }
-  }
-  optional f2: {
-    repeated group list: {
-      optional int64 element = 2;
-    }
-  }
-  optional f3: {
-    repeated group list: {
-      optional int64 element = 3;
-    }
-  }
-  optional f4: {
-    repeated group list: {
-      optional int64 element = 4;
-    }
-  }
-  optional f5: {
-    repeated group list: {
-      optional int64 element = 5;
-    }
-  }
-  optional f6: {
-    repeated group list: {
-      optional int64 element = 6;
-    }
-  }
-}
-
-Then, the following column values:
-____________________________________________________________________
-
-| rep_level | def_level | path                             | value |
-|___________|___________|__________________________________|_______|
-| 0         | 5         | f1, list, element, list, element | 1     |
-| 2         | 5         | f1, list, element, list, element | 2     |
-| 1         | 5         | f1, list, element, list, element | 3     |
-| 2         | 5         | f1, list, element, list, element | 4     |
-| 1         | 5         | f1, list, element, list, element | 5     |
-| 0         | 0         | f1, list, element, list, element | 1     |
-| 0         | 0         | f1, list, element, list, element | 2     |
-| 0         | 0         | f1, list, element, list, element | 3     |
-| 0         | 0         | f1, list, element, list, element | 2     |
-| 0         | 0         | f1, list, element, list, element | 3     |
-|___________|___________|__________________________________|_______|
-
-should produce the following data:
-Note: Values between "_" characters describe the accumulator we use during the recursion.
-
-== Value 1 ==
-_{}_
-> (r: 0, d: 5, v: 1, p: [f1, list, element, list, element])
-{f1: _?_} (f1's type is OPTIONAL)
-> (r: 0, d: 4, v: 1, p: [list, element, list, element])
-{f1: [_?_]} (list's type is REPEATED)
-> (r: 0, d: 3, v: 1, p: [element, list, element])
-{f1: [{ element: _?_ }]} (element's type is OPTIONAL)
-> (r: 0, d: 2, v: 1, p: [list, element])
-{f1: [{ element: [_?_] }]} (list's type is REPEATED)
-> (r: 0, d: 1, v: 1, p: [element])
-{f1: [{ element: [{ element: _?_ }] }]} (element's type is OPTIONAL)
-> (r: 0, d: 0, v: 1, p: [])
-{f1: [{ element: [{ element: 1}] }]}
-
-== Value 2 ==
-_{f1: [{ element: [{ element: 1 }] }]}_
-> (r: 2, d: 5, v: 2, p: [f1, list, element, list, element])
-(Note: f1 exists in the accumulator, so we use it.)
-{f1: _[{ element: [{ element: 1 }] }]_}
-> (r: 2, d: 4, v: 2, p: [list, element, list, element])
-(Note: since repetition level is non-zero, we use the last element in the list.)
-{f1: [_{ element: [{ element: 1 }] }_]}
-> (r: 1, d: 3, v: 2, p: [element, list, element])
-{f1: [{ element: _[{ element: 1 }]_ }]}
-> (r: 1, d: 2, v: 2, p: [list, element])
-(Note: repetition level is 1 and we see a REPEATED type. Create a new element.)
-(NOTE(yigitozkavci): Is this an edge case or am I not smart enough? Probably the latter.)
-{f1: [{ element: [{ element: 1 }, _{}_] }]}
-> (r: 0, d: 1, v: 2, p: [element])
-{f1: [{ element: [{ element: 1 }, { element: _?_ }] }]}
-> (r: 0, d: 0, v: 2, p: [])
-{f1: [{ element: [{ element: 1 }, { element: 2 }] }]}
-
-== Value 3 ==
-_{f1: [{ element: [{ element: 1 }, { element: 2 }] }]}_
-> (r: 1, d: 5, v: 3, p: [f1, list, element, list, element])
-{f1: _[{ element: [{ element: 1 }, { element: 2 }] }]_}
-> (r: 1, d: 4, v: 3, p: [list, element, list, element])
-{f1: [{ element: [{ element: 1 }, { element: 2 }] }, _{}_]}
-> (r: 0, d: 3, v: 3, p: [element, list, element])
-{f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: _?_}]}
-> (r: 0, d: 2, v: 3, p: [list, element])
-(Note: repetition level is 0 and the type is REPEATED, so create a new list.)
-{f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [_?_]}]}
-> (r: 0, d: 1, v: 3, p: [element])
-{f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [{ element: _?_ }]}]}
-> (r: 0, d: 0, v: 3, p: [])
-{f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [{ element: 3 }]}]}
-
--}
+-- | An example schema:
+--
+-- [root] spark_schema: {
+--   optional f1: {
+--     repeated group list: {
+--       optional element: {
+--         repeated group list: {
+--           optional int64 element = 1;
+--         }
+--       }
+--     }
+--   }
+--   optional f2: {
+--     repeated group list: {
+--       optional int64 element = 2;
+--     }
+--   }
+--   optional f3: {
+--     repeated group list: {
+--       optional int64 element = 3;
+--     }
+--   }
+--   optional f4: {
+--     repeated group list: {
+--       optional int64 element = 4;
+--     }
+--   }
+--   optional f5: {
+--     repeated group list: {
+--       optional int64 element = 5;
+--     }
+--   }
+--   optional f6: {
+--     repeated group list: {
+--       optional int64 element = 6;
+--     }
+--   }
+-- }
+--
+-- Then, the following column values:
+-- ____________________________________________________________________
+--
+-- | rep_level | def_level | path                             | value |
+-- |___________|___________|__________________________________|_______|
+-- | 0         | 5         | f1, list, element, list, element | 1     |
+-- | 2         | 5         | f1, list, element, list, element | 2     |
+-- | 1         | 5         | f1, list, element, list, element | 3     |
+-- | 2         | 5         | f1, list, element, list, element | 4     |
+-- | 1         | 5         | f1, list, element, list, element | 5     |
+-- | 0         | 0         | f1, list, element, list, element | 1     |
+-- | 0         | 0         | f1, list, element, list, element | 2     |
+-- | 0         | 0         | f1, list, element, list, element | 3     |
+-- | 0         | 0         | f1, list, element, list, element | 2     |
+-- | 0         | 0         | f1, list, element, list, element | 3     |
+-- |___________|___________|__________________________________|_______|
+--
+-- should produce the following data:
+-- Note: Values between "_" characters describe the accumulator we use during the recursion.
+--
+-- == Value 1 ==
+-- _{}_
+-- > (r: 0, d: 5, v: 1, p: [f1, list, element, list, element])
+-- {f1: _?_} (f1's type is OPTIONAL)
+-- > (r: 0, d: 4, v: 1, p: [list, element, list, element])
+-- {f1: [_?_]} (list's type is REPEATED)
+-- > (r: 0, d: 3, v: 1, p: [element, list, element])
+-- {f1: [{ element: _?_ }]} (element's type is OPTIONAL)
+-- > (r: 0, d: 2, v: 1, p: [list, element])
+-- {f1: [{ element: [_?_] }]} (list's type is REPEATED)
+-- > (r: 0, d: 1, v: 1, p: [element])
+-- {f1: [{ element: [{ element: _?_ }] }]} (element's type is OPTIONAL)
+-- > (r: 0, d: 0, v: 1, p: [])
+-- {f1: [{ element: [{ element: 1}] }]}
+--
+-- == Value 2 ==
+-- _{f1: [{ element: [{ element: 1 }] }]}_
+-- > (r: 2, d: 5, v: 2, p: [f1, list, element, list, element])
+-- (Note: f1 exists in the accumulator, so we use it.)
+-- {f1: _[{ element: [{ element: 1 }] }]_}
+-- > (r: 2, d: 4, v: 2, p: [list, element, list, element])
+-- (Note: since repetition level is non-zero, we use the last element in the list.)
+-- {f1: [_{ element: [{ element: 1 }] }_]}
+-- > (r: 1, d: 3, v: 2, p: [element, list, element])
+-- {f1: [{ element: _[{ element: 1 }]_ }]}
+-- > (r: 1, d: 2, v: 2, p: [list, element])
+-- (Note: repetition level is 1 and we see a REPEATED type. Create a new element.)
+-- (NOTE(yigitozkavci): Is this an edge case or am I not smart enough? Probably the latter.)
+-- {f1: [{ element: [{ element: 1 }, _{}_] }]}
+-- > (r: 0, d: 1, v: 2, p: [element])
+-- {f1: [{ element: [{ element: 1 }, { element: _?_ }] }]}
+-- > (r: 0, d: 0, v: 2, p: [])
+-- {f1: [{ element: [{ element: 1 }, { element: 2 }] }]}
+--
+-- == Value 3 ==
+-- _{f1: [{ element: [{ element: 1 }, { element: 2 }] }]}_
+-- > (r: 1, d: 5, v: 3, p: [f1, list, element, list, element])
+-- {f1: _[{ element: [{ element: 1 }, { element: 2 }] }]_}
+-- > (r: 1, d: 4, v: 3, p: [list, element, list, element])
+-- {f1: [{ element: [{ element: 1 }, { element: 2 }] }, _{}_]}
+-- > (r: 0, d: 3, v: 3, p: [element, list, element])
+-- {f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: _?_}]}
+-- > (r: 0, d: 2, v: 3, p: [list, element])
+-- (Note: repetition level is 0 and the type is REPEATED, so create a new list.)
+-- {f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [_?_]}]}
+-- > (r: 0, d: 1, v: 3, p: [element])
+-- {f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [{ element: _?_ }]}]}
+-- > (r: 0, d: 0, v: 3, p: [])
+-- {f1: [{ element: [{ element: 1 }, { element: 2 }] }, { element: [{ element: 3 }]}]}
 module Parquet.Reader where
+
+------------------------------------------------------------------------------
 
 import qualified Conduit as C
 import Control.Lens hiding (ix)
 import Control.Monad.Except
 import Control.Monad.Logger (MonadLogger, runNoLoggingT)
 import Control.Monad.Logger.CallStack (logError, logInfo, logWarn)
-import Control.Monad.Reader (MonadReader, ask, runReaderT)
-import Control.Monad.State (MonadState, execState, get, put)
+import Control.Monad.State (get, put)
 import qualified Data.Binary.Get as BG
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.List as CL
-import Data.Foldable (traverse_)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as M
-import Data.Maybe (fromMaybe)
 import qualified Data.Sequence as Seq
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
@@ -144,6 +140,7 @@ import Network.HTTP.Simple
   )
 import Network.HTTP.Types.Status (statusIsSuccessful)
 import Parquet.ParquetObject
+import Parquet.Prelude
 import Parquet.Stream.Reader
   ( ColumnValue (..),
     Value (..),
@@ -154,17 +151,36 @@ import qualified Parquet.Types as TT
 import Parquet.Utils (failOnExcept, failOnMay)
 import Safe (headMay)
 import System.IO
-  ( IOMode (ReadMode),
-    SeekMode (AbsoluteSeek, SeekFromEnd),
+  ( SeekMode (AbsoluteSeek, SeekFromEnd),
     hSeek,
     openFile,
   )
 import Text.Pretty.Simple (pString)
 
-newtype ParquetSource m = ParquetSource (Integer -> C.ConduitT () BS.ByteString m ())
+------------------------------------------------------------------------------
 
+-- |
+newtype ParquetSource m
+  = ParquetSource (Integer -> C.ConduitT () BS.ByteString m ())
+
+-- |
+newtype ColumnConstructor = ColumnConstructor
+  { ccInstrSet :: Seq.Seq InstructionSet
+  }
+  deriving (Eq, Show)
+
+-- | TODO(dalp): Replace with `URI`.
 type Url = String
 
+-- |
+type Record = [(ColumnValue, [T.Text])]
+
+-- |
+type InstructionSet = Seq.Seq Instruction
+
+------------------------------------------------------------------------------
+
+-- |
 readFieldTypeMapping ::
   MonadError T.Text m => TT.FileMetadata -> m (HM.HashMap T.Text TT.Type)
 readFieldTypeMapping fm =
@@ -177,6 +193,9 @@ readFieldTypeMapping fm =
               throwError $ "Type info for field " <> name <> " doesn't exist"
             Just ty -> pure (name, ty)
 
+------------------------------------------------------------------------------
+
+-- |
 readMetadata ::
   ( MonadError T.Text m,
     MonadIO m,
@@ -195,12 +214,18 @@ readMetadata (ParquetSource source) = do
             C..| decodeConduit metadataSize
             `C.fuseBoth` pure ()
 
+------------------------------------------------------------------------------
+
+-- |
 localParquetFile :: C.MonadResource m => FilePath -> ParquetSource m
 localParquetFile fp = ParquetSource $ \pos -> C.sourceIOHandle $ do
   h <- openFile fp ReadMode
   if pos > 0 then hSeek h AbsoluteSeek pos else hSeek h SeekFromEnd pos
   pure h
 
+------------------------------------------------------------------------------
+
+-- |
 remoteParquetFile ::
   ( C.MonadResource m,
     C.MonadThrow m,
@@ -228,6 +253,9 @@ remoteParquetFile url = ParquetSource $ \pos -> do
                 "Non-success response code from remoteParquetFile call: "
                   ++ show status
 
+------------------------------------------------------------------------------
+
+-- |
 readWholeParquetFile ::
   ( C.MonadThrow m,
     MonadIO m,
@@ -247,8 +275,9 @@ readWholeParquetFile inputFp = do
         (metadata ^. TT.pinchField @"row_groups")
         C..| CL.consume
 
-type Record = [(ColumnValue, [T.Text])]
+------------------------------------------------------------------------------
 
+-- |
 sourceParquet :: FilePath -> C.ConduitT () ParquetValue (C.ResourceT IO) ()
 sourceParquet fp =
   runExceptT (readMetadata (localParquetFile fp)) >>= \case
@@ -259,6 +288,9 @@ sourceParquet fp =
           (sourceRowGroup (localParquetFile fp))
           (metadata ^. TT.pinchField @"row_groups")
 
+------------------------------------------------------------------------------
+
+-- |
 foldMaybeM ::
   (Foldable t, Monad m) => (b -> a -> m (Maybe b)) -> b -> t a -> m b
 foldMaybeM action = foldM $ \b a ->
@@ -266,6 +298,9 @@ foldMaybeM action = foldM $ \b a ->
     Nothing -> pure b
     Just newB -> pure newB
 
+------------------------------------------------------------------------------
+
+-- |
 sourceRowGroupFromRemoteFile ::
   ( C.MonadResource m,
     C.MonadIO m,
@@ -279,14 +314,22 @@ sourceRowGroupFromRemoteFile ::
   C.ConduitT () ParquetValue m ()
 sourceRowGroupFromRemoteFile url rg = sourceRowGroup (remoteParquetFile url) rg
 
+------------------------------------------------------------------------------
+
+-- |
 throwOnNothing :: MonadError err m => err -> Maybe a -> m a
 throwOnNothing err Nothing = throwError err
 throwOnNothing _ (Just v) = pure v
 
+------------------------------------------------------------------------------
+
+-- |
 initColumnState :: ParquetValue
 initColumnState = ParquetObject $ MkParquetObject mempty
 
--- Instruction generator for a single column.
+------------------------------------------------------------------------------
+
+-- | Instruction generator for a single column.
 --
 -- In a parquet column, a repetition level of 0 denotes start of a new record.
 -- Example:
@@ -369,6 +412,8 @@ generateInstructions = loop Seq.empty
         Nothing -> logError "Could not create instructions: "
         Just is -> loop (ix Seq.|> is)
 
+------------------------------------------------------------------------------
+
 -- | Given a single column, generates instructions for how to build an object with that column.
 --
 -- For example, for the following column:
@@ -433,10 +478,7 @@ mkInstructions = go 1
       logInfo $ "Instruction set: " <> T.pack (show instrx)
       pure instrx
 
-newtype ColumnConstructor = ColumnConstructor
-  { ccInstrSet :: Seq.Seq InstructionSet
-  }
-  deriving (Eq, Show)
+------------------------------------------------------------------------------
 
 -- | Streams the values for every column chunk and zips them into records.
 --
@@ -499,13 +541,17 @@ sourceRowGroup source rg = do
             <$ logError ("Error while interpreting instructions: " <> err)
         Right newVal -> pure newVal
 
+------------------------------------------------------------------------------
+
+-- |
 valueToParquetValue :: Value -> ParquetValue
 valueToParquetValue Null = ParquetNull
 valueToParquetValue (ValueInt64 v) = ParquetInt v
 valueToParquetValue (ValueByteString bs) = ParquetString bs
 
-type InstructionSet = Seq.Seq Instruction
+------------------------------------------------------------------------------
 
+-- |
 data Instruction
   = IValue Value
   | IListElement
@@ -514,6 +560,8 @@ data Instruction
   | INullObject
   | IObjectField T.Text
   deriving (Eq, Show)
+
+------------------------------------------------------------------------------
 
 -- | Traverses through given instruction list and changes the given ParquetValue accordingly.
 --
@@ -593,6 +641,9 @@ interpretInstructions parquetVal is = do
             "Cannot apply IObjectField instruction on parquet value "
               <> T.pack (show v)
 
+------------------------------------------------------------------------------
+
+-- |
 mkSchemaMapping :: [TT.SchemaElement] -> M.Map T.Text TT.SchemaElement
 mkSchemaMapping schema = snd $ execState (go "") (schema, M.empty)
   where
@@ -613,6 +664,9 @@ mkSchemaMapping schema = snd $ execState (go "") (schema, M.empty)
               put (rest, M.insert (prefix <> name) schema_element mapping')
               replicateM_ (fromIntegral num_children) (go (prefix <> name <> "."))
 
+------------------------------------------------------------------------------
+
+-- |
 sourceColumnChunk ::
   ( MonadReader TT.FileMetadata m,
     C.MonadIO m,

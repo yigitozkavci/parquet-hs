@@ -3,9 +3,7 @@ module Parquet.Types.RowGroup where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import Data.Int
-import GHC.Generics
+import Parquet.Prelude
 import Parquet.Types.Column
 import Parquet.Types.SortingColumn
 import Pinch

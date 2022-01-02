@@ -3,9 +3,7 @@ module Parquet.Types.CompressionCodec where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import GHC.Generics
-import Parquet.Types.Statistics ()
+import Parquet.Prelude
 import Pinch
 
 ------------------------------------------------------------------------------

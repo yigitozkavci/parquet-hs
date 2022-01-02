@@ -3,10 +3,7 @@ module Parquet.Types.SortingColumn where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import Data.Int
-import GHC.Generics
-import Parquet.Types.AesGcm ()
+import Parquet.Prelude
 import Pinch
 
 ------------------------------------------------------------------------------

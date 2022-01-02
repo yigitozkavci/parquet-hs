@@ -3,10 +3,7 @@ module Parquet.Types.Encryption where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import Data.ByteString
-import Data.Text
-import GHC.Generics
+import Parquet.Prelude
 import Parquet.Types.AesGcm
 import Pinch
 

@@ -17,10 +17,13 @@ default-extensions:
   - FlexibleContexts
   - OverloadedStrings
   - LambdaCase
+  - MultiWayIf
+  - NoImplicitPrelude
   - ScopedTypeVariables
   - TypeApplications
   - TypeOperators
   - TypeFamilies
+  - ViewPatterns
 
 extra-source-files:
   - ChangeLog.md
@@ -55,6 +58,7 @@ library:
   - http-types
   - vector
   - pretty-simple
+  - relude
 
 tests:
   parquet-hs-unit:

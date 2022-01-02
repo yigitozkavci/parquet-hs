@@ -3,8 +3,7 @@ module Parquet.Types.LogicalType where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import GHC.Generics
+import Parquet.Prelude
 import Parquet.Types.Common
 import Pinch
 

@@ -3,15 +3,16 @@ module Parquet.Decoder.Spec
   )
 where
 
-import Data.Binary.Get (getWord8, lookAhead, runGetOrFail)
+------------------------------------------------------------------------------
+
+import Data.Binary.Get (runGetOrFail)
 import Data.Binary.Put
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Parquet.Decoder
+import Parquet.Prelude
 import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
 
+------------------------------------------------------------------------------
 spec :: Spec
 spec = describe "Decoder" $ do
   it "can decode from little endian bit packing" $

@@ -1,32 +1,27 @@
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ViewPatterns #-}
 
 module Parquet.Stream.Reader where
 
 import qualified Conduit as C
-import Control.Applicative (liftA3)
 import Control.Lens
 import Control.Monad.Except
 import Control.Monad.Logger (MonadLogger)
 import Control.Monad.Logger.CallStack (logInfo)
 import Control.Monad.Reader
-import Data.Bifunctor (first)
 import qualified Data.Binary.Get as BG
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.Serialization.Binary as CB
-import Data.Int (Int32, Int64)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Traversable (for)
-import Data.Word (Word32, Word8)
 import Parquet.Decoder (BitWidth (..), decodeBPBE, decodeRLEBPHybrid)
 import Parquet.Monad
+import Parquet.Prelude
 import Parquet.Types as TT
 import Parquet.Utils ((<??>))
 import qualified Pinch

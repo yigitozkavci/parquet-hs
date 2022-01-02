@@ -4,6 +4,7 @@ module Parquet.Utils where
 
 import Control.Monad.Except
 import qualified Data.Text as T
+import Parquet.Prelude
 
 (<??>) :: MonadError b m => Maybe a -> b -> m a
 (<??>) Nothing err = throwError err

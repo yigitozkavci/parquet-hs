@@ -3,10 +3,7 @@ module Parquet.Types.SchemaElement where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import Data.Int
-import Data.Text
-import GHC.Generics
+import Parquet.Prelude
 import Parquet.Types.Common
 import Parquet.Types.ConvertedType
 import Parquet.Types.FieldRepetitionType

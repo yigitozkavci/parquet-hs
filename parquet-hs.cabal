@@ -23,8 +23,10 @@ library
   exposed-modules:
       Parquet
       Parquet.Decoder
+      Parquet.InstanceOrphanage
       Parquet.Monad
       Parquet.ParquetObject
+      Parquet.Prelude
       Parquet.Reader
       Parquet.Stream.Reader
       Parquet.Types
@@ -57,10 +59,13 @@ library
       FlexibleContexts
       OverloadedStrings
       LambdaCase
+      MultiWayIf
+      NoImplicitPrelude
       ScopedTypeVariables
       TypeApplications
       TypeOperators
       TypeFamilies
+      ViewPatterns
   ghc-options: -Wall -O2 -fspecialise-aggressively -Wall
   build-depends:
       aeson
@@ -81,6 +86,7 @@ library
     , mtl
     , pinch
     , pretty-simple
+    , relude
     , safe
     , serialise
     , text
@@ -102,10 +108,13 @@ test-suite parquet-hs-integration
       FlexibleContexts
       OverloadedStrings
       LambdaCase
+      MultiWayIf
+      NoImplicitPrelude
       ScopedTypeVariables
       TypeApplications
       TypeOperators
       TypeFamilies
+      ViewPatterns
   ghc-options: -Wall -O2 -fspecialise-aggressively -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
@@ -139,10 +148,13 @@ test-suite parquet-hs-unit
       FlexibleContexts
       OverloadedStrings
       LambdaCase
+      MultiWayIf
+      NoImplicitPrelude
       ScopedTypeVariables
       TypeApplications
       TypeOperators
       TypeFamilies
+      ViewPatterns
   ghc-options: -Wall -O2 -fspecialise-aggressively -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck

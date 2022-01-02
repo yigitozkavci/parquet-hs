@@ -3,11 +3,7 @@ module Parquet.Types.Column where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import Data.ByteString
-import Data.Int
-import Data.Text
-import GHC.Generics
+import Parquet.Prelude
 import Parquet.Types.Common
 import Parquet.Types.CompressionCodec
 import Parquet.Types.Encoding

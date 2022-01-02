@@ -7,9 +7,7 @@ module Parquet.Types.ConvertedType where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import GHC.Generics
-import Parquet.Types.Encoding ()
+import Parquet.Prelude
 import Pinch
 
 ------------------------------------------------------------------------------

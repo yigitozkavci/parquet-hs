@@ -3,10 +3,7 @@ module Parquet.Types.AesGcm where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import Data.ByteString
-import GHC.Generics
-import Parquet.Types.Statistics ()
+import Parquet.Prelude
 import Pinch
 
 ------------------------------------------------------------------------------

@@ -3,10 +3,7 @@ module Parquet.Types.Common where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import Data.Int
-import GHC.Generics
-import Parquet.Types.Statistics ()
+import Parquet.Prelude
 import Pinch
 
 ------------------------------------------------------------------------------

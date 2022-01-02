@@ -1,12 +1,17 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 
+-- |
 module Parquet.Monad where
 
-import qualified Conduit as C
-import Control.Monad.Except
-import Control.Monad.Logger
-import qualified Data.Text as T
+------------------------------------------------------------------------------
+
+import Conduit (MonadResource, MonadThrow)
+import Control.Monad.Except (MonadError)
+import Control.Monad.Logger (MonadLogger)
+import Parquet.Prelude
+
+------------------------------------------------------------------------------
 
 type PR m =
-  (C.MonadResource m, MonadLogger m, C.MonadThrow m, MonadError T.Text m)
+  (MonadResource m, MonadLogger m, MonadThrow m, MonadError Text m)

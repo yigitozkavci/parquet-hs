@@ -3,11 +3,7 @@ module Parquet.Types.FileMetadata where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import Data.ByteString
-import Data.Int
-import Data.Text
-import GHC.Generics
+import Parquet.Prelude
 import Parquet.Types.Column
 import Parquet.Types.Encryption
 import Parquet.Types.KeyValue

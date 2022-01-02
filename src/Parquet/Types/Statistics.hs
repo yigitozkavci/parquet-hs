@@ -6,18 +6,8 @@ where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import Data.ByteString
-import Data.Int
-import GHC.Generics
-import Parquet.Types.Encoding ()
+import Parquet.Prelude
 import Pinch
-
-------------------------------------------------------------------------------
-
--- TODO(yigitozkavci): Move these orphan instances to the +pinch library code.
--- This will require opening a PR to https://github.com/abhinav/pinch.
-instance Binary a => Binary (Field k a)
 
 ------------------------------------------------------------------------------
 

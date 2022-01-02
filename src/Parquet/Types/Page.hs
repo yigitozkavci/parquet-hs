@@ -10,9 +10,7 @@ where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import Data.Int
-import GHC.Generics
+import Parquet.Prelude
 import Parquet.Types.Encoding
 import Parquet.Types.Statistics
 import Pinch

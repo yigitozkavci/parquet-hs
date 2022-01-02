@@ -11,8 +11,9 @@ module Parquet.Types.Thrift where
 import Control.Lens
 import qualified Data.Generics.Product.Fields as GL
 import qualified Data.Generics.Product.Positions as GL
-import GHC.Generics
+import GHC.Generics (D, M1, Meta (..), Rep)
 import GHC.TypeLits (AppendSymbol, Symbol)
+import Parquet.Prelude
 import Pinch
 
 ------------------------------------------------------------------------------

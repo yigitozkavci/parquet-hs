@@ -1,18 +1,42 @@
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE OverloadedStrings #-}
 
-module Parquet.Decoder where
+module Parquet.Decoder
+  ( -- * Type definitions
+    BitWidth (..),
+
+    -- * Decoder functions
+    decodeBPBE,
+    decodeBPLE,
+    decodeRLE,
+    decodeRLEBPHybrid,
+    decodeVarint,
+    encodeVarint,
+    takeBytesLe,
+  )
+where
+
+------------------------------------------------------------------------------
 
 import Data.Binary.Get
 import Data.Binary.Put
-import Data.Bits
 import qualified Data.ByteString as BS
-import Data.Int (Int32)
-import Data.Word (Word32, Word8)
+import Parquet.Prelude
 
+------------------------------------------------------------------------------
+
+-- |
+newtype BitWidth = BitWidth Word8
+  deriving (Show, Eq, Ord)
+
+------------------------------------------------------------------------------
+
+-- |
 cLeb128ByteLimit :: Int
 cLeb128ByteLimit = 32
 
+------------------------------------------------------------------------------
+
+-- |
 takeBytesLe :: Word8 -> Get Integer
 takeBytesLe 0 = pure 0
 takeBytesLe n = do
@@ -20,6 +44,9 @@ takeBytesLe n = do
   rest <- takeBytesLe (n - 1)
   pure $ (rest `shiftL` 8) .|. fromIntegral v
 
+------------------------------------------------------------------------------
+
+-- |
 takeBytesBe :: Int -> Word8 -> Get Integer
 takeBytesBe = go
   where
@@ -30,9 +57,9 @@ takeBytesBe = go
       rest <- go (sh - 1) (n - 1)
       pure $ (fromIntegral v `shiftL` (8 * (sh - 1))) .|. rest
 
-newtype BitWidth = BitWidth Word8
-  deriving (Show, Eq, Ord)
+------------------------------------------------------------------------------
 
+-- |
 decodeBPBE :: BitWidth -> Get [Word32]
 decodeBPBE (BitWidth bit_width) = do
   header <- decodeVarint
@@ -61,6 +88,9 @@ decodeBPBE (BitWidth bit_width) = do
       rest <- go (rem_vals - 1) (data_bytes `shiftL` fromIntegral bit_width)
       pure $ val : rest
 
+------------------------------------------------------------------------------
+
+-- |
 decodeBPLE :: BitWidth -> Word32 -> Get [Word32]
 decodeBPLE _ 0 = pure []
 decodeBPLE bw@(BitWidth bit_width) scaled_run_len = do
@@ -79,6 +109,9 @@ decodeBPLE bw@(BitWidth bit_width) scaled_run_len = do
       rest <- go (rem_vals - 1) (data_bytes `shiftR` fromIntegral bit_width)
       pure $ val : rest
 
+------------------------------------------------------------------------------
+
+-- |
 decodeRLE :: BitWidth -> Word32 -> Get [Word32]
 decodeRLE (BitWidth bit_width) run_len = do
   !result <-
@@ -95,6 +128,9 @@ decodeRLE (BitWidth bit_width) run_len = do
     unsafe_bs_to_w32 :: [Word8] -> Word32
     unsafe_bs_to_w32 = foldr (\x -> (fromIntegral x .|.) . (`shiftL` 8)) 0
 
+------------------------------------------------------------------------------
+
+-- |
 decodeRLEBPHybrid :: BitWidth -> Int32 -> Get [Word32]
 decodeRLEBPHybrid bit_width num_values = do
   header <- decodeVarint
@@ -113,6 +149,9 @@ decodeRLEBPHybrid bit_width num_values = do
       fail
         "Impossible happened! 0x01 .&. _ resulted in a value larger than 0x01"
 
+------------------------------------------------------------------------------
+
+-- |
 decodeVarint :: Get Integer
 decodeVarint = go cLeb128ByteLimit 0 0
   where
@@ -129,6 +168,9 @@ decodeVarint = go cLeb128ByteLimit 0 0
       let res = (low `shiftL` sh) .|. acc
       if high == 0x80 then go (rem_limit - 1) res (sh + 7) else pure res
 
+------------------------------------------------------------------------------
+
+-- |
 encodeVarint :: Integer -> Put
 encodeVarint 0 = pure ()
 encodeVarint val = do

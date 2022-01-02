@@ -3,9 +3,7 @@ module Parquet.Types.FieldRepetitionType where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import GHC.Generics
-import Parquet.Types.Common ()
+import Parquet.Prelude
 import Pinch
 
 ------------------------------------------------------------------------------

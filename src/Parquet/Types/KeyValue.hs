@@ -6,10 +6,7 @@ where
 
 ------------------------------------------------------------------------------
 
-import Data.Binary (Binary)
-import Data.Text
-import GHC.Generics
-import Parquet.Types.Statistics ()
+import Parquet.Prelude
 import Pinch
 
 ------------------------------------------------------------------------------
