@@ -23,8 +23,10 @@ library
   exposed-modules:
       Main
       Parquet.Decoder
+      Parquet.InstanceOrphanage
       Parquet.Monad
       Parquet.ParquetObject
+      Parquet.Prelude
       Parquet.Reader
       Parquet.Stream.Reader
       Parquet.ThriftTypes
@@ -34,8 +36,20 @@ library
   hs-source-dirs:
       src
   default-extensions:
+      DataKinds
+      DeriveAnyClass
+      DeriveGeneric
+      FlexibleContexts
       OverloadedStrings
       LambdaCase
+      MultiWayIf
+      NamedFieldPuns
+      NoImplicitPrelude
+      ScopedTypeVariables
+      TypeApplications
+      TypeOperators
+      TypeFamilies
+      ViewPatterns
   ghc-options: -Wall -O2 -fspecialise-aggressively -Wall
   build-depends:
       aeson
@@ -56,6 +70,7 @@ library
     , mtl
     , pinch
     , pretty-simple
+    , relude
     , safe
     , serialise
     , text
@@ -71,8 +86,20 @@ test-suite parquet-hs-integration
   hs-source-dirs:
       tests/integration
   default-extensions:
+      DataKinds
+      DeriveAnyClass
+      DeriveGeneric
+      FlexibleContexts
       OverloadedStrings
       LambdaCase
+      MultiWayIf
+      NamedFieldPuns
+      NoImplicitPrelude
+      ScopedTypeVariables
+      TypeApplications
+      TypeOperators
+      TypeFamilies
+      ViewPatterns
   ghc-options: -Wall -O2 -fspecialise-aggressively -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
@@ -100,8 +127,20 @@ test-suite parquet-hs-unit
   hs-source-dirs:
       tests/unit
   default-extensions:
+      DataKinds
+      DeriveAnyClass
+      DeriveGeneric
+      FlexibleContexts
       OverloadedStrings
       LambdaCase
+      MultiWayIf
+      NamedFieldPuns
+      NoImplicitPrelude
+      ScopedTypeVariables
+      TypeApplications
+      TypeOperators
+      TypeFamilies
+      ViewPatterns
   ghc-options: -Wall -O2 -fspecialise-aggressively -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck

@@ -13,32 +13,27 @@
 
 module Parquet.Stream.Reader where
 
-import Control.Monad.Logger.CallStack (logInfo)
 import qualified Conduit as C
-import Control.Applicative (liftA3)
 import Control.Lens
 import Control.Monad.Except
 import Control.Monad.Logger (MonadLogger)
+import Control.Monad.Logger.CallStack (logInfo)
 import Control.Monad.Reader
-import Data.Bifunctor (first)
 import qualified Data.Binary.Get as BG
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.Serialization.Binary as CB
-import Data.Int (Int32, Int64)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import qualified Data.Text as T
-import Data.Traversable (for)
-import Data.Word (Word32, Word8)
+import qualified Data.Text.Lazy as LT
 import Parquet.Decoder (BitWidth (..), decodeBPBE, decodeRLEBPHybrid)
 import Parquet.Monad
+import Parquet.Prelude
 import qualified Parquet.ThriftTypes as TT
 import Parquet.Utils ((<??>))
 import qualified Pinch
-import Safe.Exact (zipExactMay)
-import qualified Data.Text.Lazy as LT
 import Text.Pretty.Simple (pString)
 
 data ColumnValue = ColumnValue
@@ -289,7 +284,8 @@ decodeLevel encoding bit_width (fromIntegral -> num_values) = case encoding of
 -- https://blog.twitter.com/engineering/en_us/a/2013/dremel-made-simple-with-parquet.html
 calcMaxEncodingLevels ::
   forall m.
-  (MonadReader PageCtx m, MonadError T.Text m) => m (Word8, Word8)
+  (MonadReader PageCtx m, MonadError T.Text m) =>
+  m (Word8, Word8)
 calcMaxEncodingLevels = do
   schema <- asks _pcSchema
   path <- asks _pcPath
@@ -299,10 +295,11 @@ calcMaxEncodingLevels = do
     calc_max_encoding_levels schema path = do
       let pathText = T.intercalate "." (NE.toList path)
       schema_element <- M.lookup pathText schema <??> ("Schema Element cannot be found: " <> pathText)
-      (repVal, defVal) <- getRepType schema_element >>= \case
-        (TT.REQUIRED _) -> pure (0, 0)
-        (TT.OPTIONAL _) -> pure (0, 1)
-        (TT.REPEATED _) -> pure (1, 1)
+      (repVal, defVal) <-
+        getRepType schema_element >>= \case
+          (TT.REQUIRED _) -> pure (0, 0)
+          (TT.OPTIONAL _) -> pure (0, 1)
+          (TT.REPEATED _) -> pure (1, 1)
       case NE.init path of
         (root : v : vx) -> bimap (+ repVal) (+ defVal) <$> calc_max_encoding_levels schema (root NE.:| v : vx)
         _ -> pure (repVal, defVal)
