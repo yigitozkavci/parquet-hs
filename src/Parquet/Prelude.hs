@@ -12,7 +12,7 @@ import Data.Binary as X (Binary)
 import Data.Bits as X (shiftL, shiftR, (.&.), (.|.))
 import Data.Traversable as X (for)
 import Parquet.InstanceOrphanage ()
-import Relude as X
+import Relude as X hiding (Type)
 import Safe as X (headMay)
 import Safe.Exact as X (zipExactMay)
 

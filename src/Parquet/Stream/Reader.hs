@@ -30,8 +30,9 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Parquet.Decoder (BitWidth (..), decodeBPBE, decodeRLEBPHybrid)
 import Parquet.Monad
+import qualified Parquet.Pinch as TT
 import Parquet.Prelude
-import qualified Parquet.ThriftTypes as TT
+import qualified Parquet.Types as TT
 import Parquet.Utils ((<??>))
 import qualified Pinch
 import Text.Pretty.Simple (pString)

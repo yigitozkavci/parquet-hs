@@ -157,6 +157,7 @@ import Network.HTTP.Simple
   )
 import Network.HTTP.Types.Status (statusIsSuccessful)
 import Parquet.ParquetObject
+import qualified Parquet.Pinch as TT
 import Parquet.Prelude
 import Parquet.Stream.Reader
   ( ColumnValue (..),
@@ -164,7 +165,7 @@ import Parquet.Stream.Reader
     decodeConduit,
     readColumnChunk,
   )
-import qualified Parquet.ThriftTypes as TT
+import qualified Parquet.Types as TT
 import Parquet.Utils (failOnExcept, failOnMay)
 import System.IO
   ( SeekMode (AbsoluteSeek, SeekFromEnd),

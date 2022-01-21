@@ -26,10 +26,17 @@ library
       Parquet.InstanceOrphanage
       Parquet.Monad
       Parquet.ParquetObject
+      Parquet.Pinch
       Parquet.Prelude
       Parquet.Reader
       Parquet.Stream.Reader
-      Parquet.ThriftTypes
+      Parquet.Types
+      Parquet.Types.ColumnChunk
+      Parquet.Types.Enums
+      Parquet.Types.FileMetaData
+      Parquet.Types.PageHeader
+      Parquet.Types.Primitives
+      Parquet.Types.RowGroup
       Parquet.Utils
   other-modules:
       Paths_parquet_hs

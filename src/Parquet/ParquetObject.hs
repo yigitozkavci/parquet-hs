@@ -14,7 +14,7 @@ where
 import Control.Lens (makeLenses, makePrisms)
 import qualified Data.Aeson as JSON
 import Data.Binary (Binary (get, put))
-import Parquet.Prelude hiding (Type, get, put)
+import Parquet.Prelude hiding (get, put)
 
 ------------------------------------------------------------------------------
 newtype ParquetObject = MkParquetObject (HashMap Text ParquetValue)
