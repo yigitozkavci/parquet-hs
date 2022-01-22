@@ -182,7 +182,7 @@ newtype ParquetSource m = ParquetSource (Integer -> C.ConduitT () ByteString m (
 
 ------------------------------------------------------------------------------
 readFieldTypeMapping ::
-  MonadError Text m => TT.FileMetadata -> m (HashMap Text TT.Type)
+  MonadError Text m => TT.FileMetaData -> m (HashMap Text TT.Type)
 readFieldTypeMapping fm =
   let schemaElements = fm ^. TT.pinchField @"schema"
    in fmap fromList $
@@ -200,7 +200,7 @@ readMetadata ::
     MonadFail m
   ) =>
   ParquetSource m ->
-  m TT.FileMetadata
+  m TT.FileMetaData
 readMetadata (ParquetSource source) = do
   bs <- C.runConduit (source (-8) C..| CB.take 8)
   case BG.runGetOrFail BG.getWord32le bs of
@@ -303,7 +303,7 @@ sourceRowGroupFromRemoteFile ::
     C.MonadIO m,
     C.MonadThrow m,
     MonadLogger m,
-    MonadReader TT.FileMetadata m,
+    MonadReader TT.FileMetaData m,
     MonadFail m
   ) =>
   String ->
@@ -373,7 +373,7 @@ generateInstructions ::
     C.MonadThrow m,
     MonadLogger m,
     MonadFail m,
-    MonadReader TT.FileMetadata m
+    MonadReader TT.FileMetaData m
   ) =>
   C.ConduitT (ColumnValue, [Text]) ColumnConstructor m ()
 generateInstructions = loop Seq.empty
@@ -408,7 +408,7 @@ generateInstructions = loop Seq.empty
 
 ------------------------------------------------------------------------------
 readSchemaMapping ::
-  MonadReader TT.FileMetadata m =>
+  MonadReader TT.FileMetaData m =>
   m (M.Map Text TT.SchemaElement)
 readSchemaMapping = do
   metadata <- ask
@@ -436,7 +436,7 @@ readSchemaMapping = do
 
 ------------------------------------------------------------------------------
 findSchemaElement ::
-  (MonadReader TT.FileMetadata m, MonadFail m) =>
+  (MonadReader TT.FileMetaData m, MonadFail m) =>
   Text ->
   m (Maybe TT.SchemaElement)
 findSchemaElement path = do
@@ -463,7 +463,7 @@ mkInstructions ::
   ( C.MonadIO m,
     C.MonadThrow m,
     MonadLogger m,
-    MonadReader TT.FileMetadata m,
+    MonadReader TT.FileMetaData m,
     MonadFail m
   ) =>
   (ColumnValue, [Text]) ->
@@ -566,7 +566,7 @@ sourceRowGroup ::
     C.MonadIO m,
     C.MonadThrow m,
     MonadLogger m,
-    MonadReader TT.FileMetadata m,
+    MonadReader TT.FileMetaData m,
     MonadFail m
   ) =>
   ParquetSource m ->
@@ -705,14 +705,14 @@ interpretInstructions parquetVal is = do
               <> T.pack (show v)
 
 ------------------------------------------------------------------------------
-readSchemaRoot :: (MonadReader TT.FileMetadata m, MonadFail m) => m TT.SchemaElement
+readSchemaRoot :: (MonadReader TT.FileMetaData m, MonadFail m) => m TT.SchemaElement
 readSchemaRoot = do
   metadata <- ask
   headMay (metadata ^. TT.pinchField @"schema") `failOnMay` "Schema cannot be empty"
 
 ------------------------------------------------------------------------------
 sourceColumnChunk ::
-  ( MonadReader TT.FileMetadata m,
+  ( MonadReader TT.FileMetaData m,
     C.MonadIO m,
     C.MonadResource m,
     C.MonadThrow m,
