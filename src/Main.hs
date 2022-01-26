@@ -1,16 +1,18 @@
-module Main where
+-- |
+module Main
+  ( main,
+  )
+where
 
-import qualified Conduit as C
-import Control.Monad.Except
+------------------------------------------------------------------------------
+
+import Conduit (runResourceT)
 import Control.Monad.Logger
+import Parquet.Prelude
 import Parquet.Reader (readWholeParquetFile)
 
+------------------------------------------------------------------------------
 main :: IO ()
-main = do
-  let fp = "test.parquet"
-  void $
-    runStdoutLoggingT $
-      C.runResourceT $
-        runExceptT $
-          readWholeParquetFile
-            fp
+main = void . runT $ readWholeParquetFile "test.parquet"
+  where
+    runT = runStdoutLoggingT . runResourceT . runExceptT

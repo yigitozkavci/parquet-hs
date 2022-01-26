@@ -17,6 +17,7 @@ let
       # network `pinch` uses but it's causing issues here so instead we're
       # just disabling the test suite here as that's where the error is.
       pinch = dontCheck super.pinch;
+      relude = super.relude_1_0_0_1;
     };
   };
 

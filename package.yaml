@@ -11,8 +11,20 @@ license: BSD3
 ghc-options: -Wall -O2 -fspecialise-aggressively
 
 default-extensions:
+  - DataKinds
+  - DeriveAnyClass
+  - DeriveGeneric
+  - FlexibleContexts
   - OverloadedStrings
   - LambdaCase
+  - MultiWayIf
+  - NamedFieldPuns
+  - NoImplicitPrelude
+  - ScopedTypeVariables
+  - TypeApplications
+  - TypeOperators
+  - TypeFamilies
+  - ViewPatterns
 
 extra-source-files:
   - ChangeLog.md
@@ -47,6 +59,7 @@ library:
   - http-types
   - vector
   - pretty-simple
+  - relude
 
 tests:
   parquet-hs-unit:

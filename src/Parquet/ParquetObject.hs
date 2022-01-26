@@ -1,25 +1,23 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Parquet.ParquetObject where
+-- |
+module Parquet.ParquetObject
+  ( -- * Type definitions
+    ParquetValue (..),
+    ParquetObject (..),
+    ParquetList (..),
+  )
+where
 
-import qualified Data.Vector as V
-import Codec.Serialise (Serialise)
-import Control.Lens
+------------------------------------------------------------------------------
+
+import Control.Lens (makeLenses, makePrisms)
 import qualified Data.Aeson as JSON
-import Data.Binary (Binary (..))
-import qualified Data.ByteString as BS
-import qualified Data.HashMap.Strict as HM
-import Data.Int (Int64)
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
-import GHC.Generics (Generic)
-import Data.Ratio
+import Data.Binary (Binary (get, put))
+import Parquet.Prelude hiding (get, put)
 
-newtype ParquetObject = MkParquetObject (HM.HashMap T.Text ParquetValue)
+------------------------------------------------------------------------------
+newtype ParquetObject = MkParquetObject (HashMap Text ParquetValue)
   deriving (Eq, Show, Generic, Serialise)
 
 instance Semigroup ParquetObject where
@@ -29,12 +27,13 @@ instance Monoid ParquetObject where
   mempty = MkParquetObject mempty
 
 instance Binary ParquetObject where
-  put (MkParquetObject hm) = put (HM.toList hm)
-  get = MkParquetObject . HM.fromList <$> get
+  put (MkParquetObject hm) = put (toList hm)
+  get = MkParquetObject . fromList <$> get
 
-instance JSON.ToJSON ParquetObject where
-  toJSON (MkParquetObject obj) = JSON.toJSON obj
+instance ToJSON ParquetObject where
+  toJSON (MkParquetObject obj) = toJSON obj
 
+------------------------------------------------------------------------------
 newtype ParquetList = MkParquetList [ParquetValue]
   deriving (Eq, Show, Generic, Serialise)
 
@@ -48,46 +47,48 @@ instance Binary ParquetList where
   put (MkParquetList l) = put l
   get = MkParquetList <$> get
 
-instance JSON.ToJSON ParquetList where
-  toJSON (MkParquetList l) = JSON.toJSON l
+instance ToJSON ParquetList where
+  toJSON (MkParquetList l) = toJSON l
 
+------------------------------------------------------------------------------
 data ParquetValue
   = ParquetObject !ParquetObject
   | ParquetList !ParquetList
   | ParquetInt !Int64
-  | ParquetString !BS.ByteString
+  | ParquetString !ByteString
   | ParquetBool !Bool
   | ParquetNull
   | EmptyValue
   deriving (Eq, Show, Generic, Binary, Serialise)
 
-instance JSON.FromJSON ParquetValue where
+instance FromJSON ParquetValue where
   parseJSON = \case
     JSON.Object obj -> do
-      ParquetObject . MkParquetObject <$> traverse JSON.parseJSON obj
+      ParquetObject . MkParquetObject <$> traverse parseJSON obj
     JSON.Array vec -> do
-      ParquetList . MkParquetList . V.toList <$> traverse JSON.parseJSON vec
+      ParquetList . MkParquetList . toList <$> traverse parseJSON vec
     JSON.Number sci ->
       pure $ ParquetInt $ fromInteger $ numerator $ toRational sci
     JSON.String s ->
-      pure $ ParquetString $ T.encodeUtf8 s
+      pure $ ParquetString $ encodeUtf8 s
     JSON.Bool b -> pure $ ParquetBool b
     JSON.Null -> pure ParquetNull
 
-instance JSON.ToJSON ParquetValue where
+instance ToJSON ParquetValue where
   toJSON = \case
-    ParquetObject obj -> JSON.toJSON obj
-    ParquetList l -> JSON.toJSON l
+    ParquetObject obj -> toJSON obj
+    ParquetList l -> toJSON l
     ParquetInt i64 -> JSON.Number (fromIntegral i64)
-    ParquetString bs -> case T.decodeUtf8' bs of
+    ParquetString bs -> case decodeUtf8' bs of
       Right t -> JSON.String t
       Left _ -> JSON.String "<non-utf8-string>"
     ParquetBool b -> JSON.Bool b
     ParquetNull -> JSON.Null
     EmptyValue -> JSON.Null
 
+------------------------------------------------------------------------------
 makeLenses ''ParquetObject
-makePrisms ''ParquetObject
-
 makeLenses ''ParquetValue
+
+makePrisms ''ParquetObject
 makePrisms ''ParquetValue
