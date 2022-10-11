@@ -8,6 +8,7 @@ import Data.Binary.Put
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Parquet.Decoder
+import Parquet.Prelude
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
