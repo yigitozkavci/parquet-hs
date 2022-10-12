@@ -11,20 +11,15 @@ where
 
 ------------------------------------------------------------------------------
 
-import Control.Lens (makeLenses, makePrisms)
+import Lens.Micro.Platform (makeLenses)
 import qualified Data.Aeson as JSON
 import Data.Binary (Binary (get, put))
 import Parquet.Prelude hiding (get, put)
 
 ------------------------------------------------------------------------------
 newtype ParquetObject = MkParquetObject (HashMap Text ParquetValue)
-  deriving (Eq, Show, Generic, Serialise)
-
-instance Semigroup ParquetObject where
-  MkParquetObject hm1 <> MkParquetObject hm2 = MkParquetObject (hm1 <> hm2)
-
-instance Monoid ParquetObject where
-  mempty = MkParquetObject mempty
+  deriving (Eq, Show, Generic)
+  deriving newtype (Serialise, Semigroup, Monoid)
 
 instance Binary ParquetObject where
   put (MkParquetObject hm) = put (toList hm)
@@ -35,13 +30,8 @@ instance ToJSON ParquetObject where
 
 ------------------------------------------------------------------------------
 newtype ParquetList = MkParquetList [ParquetValue]
-  deriving (Eq, Show, Generic, Serialise)
-
-instance Semigroup ParquetList where
-  MkParquetList l1 <> MkParquetList l2 = MkParquetList (l1 <> l2)
-
-instance Monoid ParquetList where
-  mempty = MkParquetList mempty
+  deriving (Eq, Show, Generic)
+  deriving newtype (Serialise, Semigroup, Monoid)
 
 instance Binary ParquetList where
   put (MkParquetList l) = put l
@@ -90,5 +80,3 @@ instance ToJSON ParquetValue where
 makeLenses ''ParquetObject
 makeLenses ''ParquetValue
 
-makePrisms ''ParquetObject
-makePrisms ''ParquetValue

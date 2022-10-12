@@ -6,7 +6,7 @@ module Parquet.Pinch where
 
 ------------------------------------------------------------------------------
 
-import Control.Lens
+import Data.Generics.Internal.VL (Lens)
 import qualified Data.Generics.Product.Fields as GL
 import qualified Data.Generics.Product.Positions as GL
 import GHC.Generics (D, M1, Meta (..), Rep)

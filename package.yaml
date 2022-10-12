@@ -14,7 +14,9 @@ default-extensions:
   - DataKinds
   - DeriveAnyClass
   - DeriveGeneric
+  - DerivingStrategies
   - FlexibleContexts
+  - GeneralizedNewtypeDeriving
   - OverloadedStrings
   - LambdaCase
   - MultiWayIf
@@ -48,7 +50,7 @@ library:
   - monad-logger
   - conduit-extra
   - generic-lens
-  - lens
+  - microlens-platform
   - safe
   - aeson
   - unordered-containers
