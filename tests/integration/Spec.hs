@@ -21,6 +21,7 @@ import qualified Data.Text.IO as TextIO (putStrLn)
 import qualified Data.Text.Lazy as LText (Text)
 import qualified Data.Text.Lazy.IO as LTextIO (putStrLn)
 import Parquet.Reader (readWholeParquetFile)
+import Parquet.Prelude
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
 import System.Process

@@ -134,7 +134,7 @@ module Parquet.Reader where
 ------------------------------------------------------------------------------
 
 import qualified Conduit as C
-import Control.Lens hiding (ix)
+import Lens.Micro.Platform ((^.), at)
 import Control.Monad.Except
 import Control.Monad.Logger (MonadLogger, runNoLoggingT)
 import Control.Monad.Logger.CallStack (logError, logInfo, logWarn)

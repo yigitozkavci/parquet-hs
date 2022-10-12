@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.5.
+-- This file has been generated from package.yaml by hpack version 0.35.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -46,7 +46,9 @@ library
       DataKinds
       DeriveAnyClass
       DeriveGeneric
+      DerivingStrategies
       FlexibleContexts
+      GeneralizedNewtypeDeriving
       OverloadedStrings
       LambdaCase
       MultiWayIf
@@ -71,8 +73,8 @@ library
     , http-client
     , http-conduit
     , http-types
-    , lens
     , lifted-async
+    , microlens-platform
     , monad-logger
     , mtl
     , pinch
@@ -96,7 +98,9 @@ test-suite parquet-hs-integration
       DataKinds
       DeriveAnyClass
       DeriveGeneric
+      DerivingStrategies
       FlexibleContexts
+      GeneralizedNewtypeDeriving
       OverloadedStrings
       LambdaCase
       MultiWayIf
@@ -137,7 +141,9 @@ test-suite parquet-hs-unit
       DataKinds
       DeriveAnyClass
       DeriveGeneric
+      DerivingStrategies
       FlexibleContexts
+      GeneralizedNewtypeDeriving
       OverloadedStrings
       LambdaCase
       MultiWayIf

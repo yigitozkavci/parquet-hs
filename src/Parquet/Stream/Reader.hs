@@ -14,7 +14,7 @@
 module Parquet.Stream.Reader where
 
 import qualified Conduit as C
-import Control.Lens
+import Lens.Micro.Platform ((^.), (^?), ix)
 import Control.Monad.Except
 import Control.Monad.Logger (MonadLogger)
 import Control.Monad.Logger.CallStack (logInfo)
